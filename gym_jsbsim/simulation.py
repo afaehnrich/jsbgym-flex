@@ -17,7 +17,7 @@ class Simulation(object):
     LONGITUDINAL = 'longitudinal'
     FULL = 'full'
 
-    def __init__(self,
+    def __init__(self, jsbsim_dir,
                  sim_frequency_hz: float = 60.0,
                  aircraft: Aircraft = cessna172P,
                  init_conditions: Dict[prp.Property, float] = None,
@@ -33,7 +33,8 @@ class Simulation(object):
         :param allow_flightgear_output: bool, loads a config file instructing
             JSBSim to connect to an output socket if True.
         """
-        self.jsbsim = jsbsim.FGFDMExec(root_dir=self.ROOT_DIR)
+        self.jsbsim_dir = jsbsim_dir
+        self.jsbsim = jsbsim.FGFDMExec(root_dir=self.jsbsim_dir)
         self.jsbsim.set_debug_level(0)
         if allow_flightgear_output:
             flightgear_output_config = os.path.join(os.path.dirname(os.path.abspath(__file__)),

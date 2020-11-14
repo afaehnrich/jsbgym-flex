@@ -24,7 +24,7 @@ class JsbSimEnv(gym.Env):
     metadata = {'render.modes': ['human', 'flightgear']}
 
     def __init__(self, task_type: Type[HeadingControlTask], aircraft: Aircraft = cessna172P,
-                 agent_interaction_freq: int = 5, shaping: Shaping=Shaping.STANDARD):
+                 agent_interaction_freq: int = 5, shaping: Shaping=Shaping.STANDARD, jsbsim_dir=''):
         """
         Constructor. Inits some internal state, but JsbSimEnv.reset() must be
         called first before interacting with environment.
@@ -40,6 +40,7 @@ class JsbSimEnv(gym.Env):
             raise ValueError('agent interaction frequency must be less than '
                              'or equal to JSBSim integration frequency of '
                              f'{self.JSBSIM_DT_HZ} Hz.')
+        self.jsbsim_dir = jsbsim_dir
         self.sim: Simulation = None
         self.sim_steps_per_agent_step: int = self.JSBSIM_DT_HZ // agent_interaction_freq
         self.aircraft = aircraft
@@ -92,7 +93,7 @@ class JsbSimEnv(gym.Env):
         return np.array(state)
 
     def _init_new_sim(self, dt, aircraft, initial_conditions):
-        return Simulation(sim_frequency_hz=dt,
+        return Simulation(jsbsim_dir=self.jsbsim_dir, sim_frequency_hz=dt,
                           aircraft=aircraft,
                           init_conditions=initial_conditions)
 
@@ -175,7 +176,7 @@ class NoFGJsbSimEnv(JsbSimEnv):
     metadata = {'render.modes': ['human']}
 
     def _init_new_sim(self, dt: float, aircraft: Aircraft, initial_conditions: Dict):
-        return Simulation(sim_frequency_hz=dt,
+        return Simulation(sim_frequency_hz=dt, jsbsim_dir=self.jsbsim_dir,
                           aircraft=aircraft,
                           init_conditions=initial_conditions,
                           allow_flightgear_output=False)
