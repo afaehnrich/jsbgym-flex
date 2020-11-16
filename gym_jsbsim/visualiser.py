@@ -6,6 +6,7 @@ import gym_jsbsim.properties as prp
 from gym_jsbsim.aircraft import Aircraft
 from gym_jsbsim.simulation import Simulation
 from typing import NamedTuple, Tuple
+#from gym_jsbsim.configuration import Configuration
 
 
 class AxesTuple(NamedTuple):
@@ -30,7 +31,7 @@ class FigureVisualiser(object):
     TEXT_Y_POSN_INITIAL = 1.0
     TEXT_Y_INCREMENT = -0.1
 
-    def __init__(self, _: Simulation, print_props: Tuple[prp.Property]):
+    def __init__(self, cfg: dict, print_props: Tuple[prp.Property]):
         """
         Constructor.
 
@@ -229,17 +230,17 @@ class FlightGearVisualiser(object):
     launch. A Figure is also displayed (by creating its own FigureVisualiser)
     which is used to display the agent's actions.
     """
-    TYPE = 'socket'
-    DIRECTION = 'in'
-    RATE = 60
-    SERVER = ''
-    PORT = 5550
-    PROTOCOL = 'udp'
+    #TYPE = 'socket'
+    #DIRECTION = 'in'
+    #RATE = 60
+    #SERVER = ''
+    #PORT = 5550
+    #PROTOCOL = 'udp'
     LOADED_MESSAGE = 'loading cities done'
-    FLIGHTGEAR_TIME_FACTOR = 1  # sim speed relative to realtime, higher is faster
-    TIME = 'dusk'
+    #FLIGHTGEAR_TIME_FACTOR = 10  # sim speed relative to realtime, higher is faster
+    #TIME = 'dusk'
 
-    def __init__(self, sim: Simulation, print_props: Tuple[prp.Property], block_until_loaded=True):
+    def __init__(self, cfg: dict, aircraft: Aircraft):
         """
         Launches FlightGear in subprocess and starts figure for plotting actions.
 
@@ -249,23 +250,20 @@ class FlightGearVisualiser(object):
         :param block_until_loaded: visualiser will block until it detects that
             FlightGear has loaded if True.
         """
-        self.configure_simulation_output(sim)
-        self.print_props = print_props
-        self.flightgear_process = self._launch_flightgear(sim.get_aircraft())
-        self.figure = FigureVisualiser(sim, print_props)
-        if block_until_loaded:
-            time.sleep(20)
-            #self._block_until_flightgear_loaded()
+        self.cfg = cfg or {}
+        self.flightgear_process = None
+        if self.cfg.get('start_fgfs'): 
+            self.flightgear_process = self._launch_flightgear(aircraft, cfg)
+            if self.cfg.get('block_until_loaded'):
+                time.sleep(20)
+                #self._block_until_flightgear_loaded()
 
     def plot(self, sim: Simulation) -> None:
-        """
-        Updates a 3D plot of agent actions.
-        """
-        self.figure.plot(sim)
+        pass
 
     @staticmethod
-    def _launch_flightgear(aircraft: Aircraft):
-        cmd_line_args = FlightGearVisualiser._create_cmd_line_args(aircraft.flightgear_id)
+    def _launch_flightgear(aircraft: Aircraft, cfg):
+        cmd_line_args = FlightGearVisualiser._create_cmd_line_args(aircraft.flightgear_id, cfg)
         gym.logger.info(f'Subprocess: "{cmd_line_args}"')
         flightgear_process = subprocess.Popen(
             cmd_line_args,
@@ -277,26 +275,26 @@ class FlightGearVisualiser(object):
 
     def configure_simulation_output(self, sim: Simulation):
         sim.enable_flightgear_output()
-        sim.set_simulation_time_factor(self.FLIGHTGEAR_TIME_FACTOR)
+        sim.set_simulation_time_factor(self.cfg.get('timefactor') or 1)
 
     @staticmethod
-    def _create_cmd_line_args(aircraft_id: str):
+    def _create_cmd_line_args(aircraft_id: str, cfg):
         # FlightGear doesn't have a 172X model, use the P instead
         if aircraft_id == 'c172x':
             aircraft_id = 'c172p'
 
         flightgear_cmd = 'fgfs'
         aircraft_arg = f'--aircraft={aircraft_id}'
-        flight_model_arg = '--native-fdm=' + f'{FlightGearVisualiser.TYPE},' \
-                                             f'{FlightGearVisualiser.DIRECTION},' \
-                                             f'{FlightGearVisualiser.RATE},' \
-                                             f'{FlightGearVisualiser.SERVER},' \
-                                             f'{FlightGearVisualiser.PORT},' \
-                                             f'{FlightGearVisualiser.PROTOCOL}'
+        flight_model_arg = '--native-fdm=' + f'{cfg.get("type")},' \
+                                             f'{cfg.get("direction")},' \
+                                             f'{cfg.get("rate")},' \
+                                             f'{cfg.get("server")},' \
+                                             f'{cfg.get("port")},' \
+                                             f'{cfg.get("protocol")}'
         flight_model_type_arg = '--fdm=' + 'external'
         disable_ai_arg = '--disable-ai-traffic'
         disable_live_weather_arg = '--disable-real-weather-fetch'
-        time_of_day_arg = '--timeofday=' + FlightGearVisualiser.TIME
+        time_of_day_arg = '--timeofday=' + cfg.get('time') or 'noon'
         return (flightgear_cmd, aircraft_arg, flight_model_arg,
                 flight_model_type_arg, disable_ai_arg, disable_live_weather_arg,
                 time_of_day_arg)
@@ -306,7 +304,6 @@ class FlightGearVisualiser(object):
             msg_out = self.flightgear_process.stdout.readline().decode()
             if self.LOADED_MESSAGE in msg_out:
                 gym.logger.info('FlightGear loading complete; entering world')
-                break
             else:
                 time.sleep(0.001)
 

@@ -9,13 +9,18 @@ import gym_jsbsim
 import gym_jsbsim.properties as prp
 from gym_jsbsim.aircraft import *
 from gym_jsbsim.environment import *
-from gym_jsbsim.tasks import TurnHeadingControlTask
+from gym_jsbsim.tasks import TurnHeadingControlTask, MyFlightTask
+from gym_jsbsim.pid import PID_angle
 import pathlib
 from pid_controller.pid import PID, twiddle
 from sklearn.metrics import mean_squared_error
 import random
 import math
-import json
+import toml
+#from gym_jsbsim.configuration import Configuration
+
+cfg = toml.load('gym-jsbsim-cfg.toml')
+
 
 class single_pid: 
     def __init__(self, kp, ki, kd, min = -1, max = 1,):
@@ -65,67 +70,39 @@ def simulate():
 
         if i==500: target = -random.random()
         if i%10 ==0:
-            with open('pid.json','r') as f:
-                try:
-                    p=json.load(f)
-                except:
-                    print('error loading JSON')
-                r=p['pid_roll']
-                n=p['pid_nick']
-                pid_roll.set_pid(r['p'],r['i'],r['d'])
-                pid_nick.set_pid(n['p'],n['i'],n['d'])
-                t_roll=p['target_roll']
-                t_nick=p['target_nick']
-                print ('pid_r=[{:.3f},{:.3f},{:5f} pid_n=[{:.3f},{:.3f},{:.5f}] t_roll={:.1f} t_nick={:.1f}'
-                    ' action=[{:.2f},{:.2f}] position=[{:.2f},{:.2f}]          '
-                    .format(r['p'], r['i'], r['d'], n['p'], n['i'], n['d'], t_roll, t_nick, 
-                    action[0],action[1], roll, env.sim[prp.pitch_rad]),end='\r')
-        action[0] = pid_roll.get_val(t_roll, roll, time)
-        action[1] = pid_nick.get_val(t_nick, env.sim[prp.pitch_rad], time)
-
-        #action[0] = 0
-        #action[1] = 0
-
-        #action[1]=0
+            cfg = toml.load('gym-jsbsim-cfg.toml')
+            r=cfg['pid']['roll']
+            n=cfg['pid']['pitch']
+            pid_roll.tune(r['p'],r['i'],r['d'])
+            pid_roll.anti_windup = r['windup']
+            pid_pitch.tune(n['p'],n['i'],n['d'])
+            pid_pitch.anti_windup = n['windup']
+            t_roll=r['target']
+            t_pitch=n['target']
+            pid_roll.target = t_roll
+            pid_pitch.target = t_pitch
+            print ('{:.0f}: pid_r=[{:.3f},{:.3f},{:5f} pid_n=[{:.3f},{:.3f},{:.5f}] t_roll={:.1f} t_nick={:.1f}'
+                ' action=[{:.2f},{:.2f}] position=[{:.2f},{:.2f}]          '
+                .format(time, r['p'], r['i'], r['d'], n['p'], n['i'], n['d'], t_roll, t_pitch, 
+                action[0],action[1], roll, env.sim[prp.pitch_rad]),end='\r')
+        action[0] = pid_roll(roll)
+        action[1] = pid_pitch(env.sim[prp.pitch_rad])
         env.step(np.array(action))
         #    action_variables = (prp.aileron_cmd, prp.elevator_cmd, prp.rudder_cmd)
     return rolls, actions, targets, times,x, y, z, nicks
 
-#pid_roll = io_pid( 1.362, 1.0, .288, .793, 0.285, .234, -1, 1) # -0.00799882575461252   
-#pid_roll = io_pid( 0.9, 0.,  0.4, 0.4, 0.4, 0.1, -1, 1)#    -0.056860760633386735
-#pid_roll = io_pid (0.99,  0.2,   0.127, 0.647, 0.2,   0.01, -1, 1 )  #gANZ OK # -0.02146936449263489
-#pid_roll = io_pid( 5, 2,  0.001, 0.5, 0.3, 0.001, -1, 1) # anfangs extrem, dann gut
-#pid_roll = io_pid(0.685, 1.,    0.443, 0.381, 0.,    0.066,-1,1)#    -0.07142133264873667
-#pid_roll = io_pid(0.928, 0.,    0.28,  0.527, 0.,    0., -1, 1 ) #   -0.03351313101882057
-#pid_roll = io_pid(0.835, 0.468, 0.,    0.731, 0.,    0., -1, 1  )#    -0.017521506445783038
-#pid_roll = io_pid( 2, 1.5,  0.01, 0.5, 0.3, 0.001, -1, 1) # anfangs extrem, dann gut
-#pid_roll = io_pid(0.969, 0.856, 0.242, 0.607, 0.737, 0.128, -1, 1)#    -0.08736105006175784
-#pid_roll = io_pid(0.77,  0.,    0.285, 0.541, 0.,    0.,  -1, 1)#    -0.07065646914239888
-#pid_roll = io_pid(0.77,  0.001,    0.3, 0.4, 0.2,    0.,  -1, 1)#    -0.07065646914239888
-#pid_roll = io_pid(0.982, 0.,    0.,    0.533, 0.,    0., -1,1)
-#pid_roll = io_pid(0.721, 0.,    0.717, 0.34,  0.31,  0., -1,1)  
-#pid_roll = io_pid(0.686, 1.,    0.,    0.358, 0.918, 0.0, -1,1)
-#pid_roll = io_pid(1.0, 0.,    0.,    0.5, 0., 0.000, -1,1)
 
-#pid_nick = io_pid(1, .6,    0.0,  0.5, 0.4, 0.0001, -1,1)
-
-#pid_roll = single_pid(.015, 10., 0.00001, -1,1) aus der XML
-#pid_nick = single_pid(-0.005, 100.,    0.00001, -1,1) aus der XML
-pid_roll = single_pid(.00015, 000., 0.0000, -1,1) 
-pid_nick = single_pid(-.00015, 100000., 0.0000, -1,1) 
-with open('pid.json','r') as f:
-    p=json.load(f)
-    r=p['pid_roll']
-    n=p['pid_nick']
-    pid_roll.set_pid(r['p'],r['i'],r['d'])
-    pid_nick.set_pid(n['p'],n['i'],n['d'])
+r=cfg['pid']['roll']
+p=cfg['pid']['pitch']
+pid_roll = PID_angle(r['p'], r['i'], r['d'], angle_max=2*math.pi, out_min=-1, out_max=1,
+     target=r['target'], anti_windup=r['windup'] )
+pid_pitch = PID_angle(p['p'], p['i'], p['d'], angle_max=2*math.pi, out_min=-1, out_max=1,
+     target=p['target'], anti_windup=p['windup'] )
 
 np.set_printoptions(precision=3, suppress=True)
 #jsbsim_path = pathlib.Path.joinpath( pathlib.Path(__file__).parent.absolute(), 'JSBSim') 
 #jsbsim_path='/usr/share/games/flightgear'
-jsbsim_path ='../jsbsim'
-env = gym_jsbsim.environment.JsbSimEnv(task_type = TurnHeadingControlTask, aircraft = cessna172P,
-                 agent_interaction_freq = 10, shaping = Shaping.STANDARD, jsbsim_dir=str(jsbsim_path))
+env = gym_jsbsim.environment.JsbSimEnv(cfg = cfg, task_type = MyFlightTask, shaping = Shaping.STANDARD)
 
 rolls, actions, targets, times, x, y, z, nicks = simulate()
 #from mpl_toolkits import mplot3d

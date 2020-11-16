@@ -33,8 +33,7 @@ class Simulation(object):
         :param allow_flightgear_output: bool, loads a config file instructing
             JSBSim to connect to an output socket if True.
         """
-        self.jsbsim_dir = jsbsim_dir
-        self.jsbsim = jsbsim.FGFDMExec(root_dir=self.jsbsim_dir)
+        self.jsbsim = jsbsim.FGFDMExec(root_dir=jsbsim_dir)
         self.jsbsim.set_debug_level(0)
         if allow_flightgear_output:
             flightgear_output_config = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -129,12 +128,12 @@ class Simulation(object):
         :param model_name: string, name of aircraft to be loaded
         :param init_conditions: dict mapping properties to their initial values
         """
-        if init_conditions is not None:
-            # if we are specifying conditions, load a minimal file
-            ic_file = 'minimal_ic.xml'
-        else:
-            ic_file = 'basic_ic.xml'
-
+        #if init_conditions is not None:
+        #    # if we are specifying conditions, load a minimal file
+        #    ic_file = 'minimal_ic.xml'
+        #else:
+        #    ic_file = 'basic_ic.xml'
+        ic_file = 'minimal_ic.xml'
         ic_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ic_file)
         self.jsbsim.load_ic(ic_path, useStoredPath=False)
         self.load_model(model_name)

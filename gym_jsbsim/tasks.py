@@ -17,107 +17,58 @@ from typing import Optional, Sequence, Dict, Tuple, NamedTuple, Type
 
 
 class Task(ABC):
-    """
-    Interface for Tasks, modules implementing specific environments in JSBSim.
-
-    A task defines its own state space, action space, termination conditions and agent_reward function.
-    """
 
     @abstractmethod
     def task_step(self, sim: Simulation, action: Sequence[float], sim_steps: int) \
             -> Tuple[np.ndarray, float, bool, Dict]:
-        """
-        Calculates new state, reward and termination.
-
-        :param sim: a Simulation, the simulation from which to extract state
-        :param action: sequence of floats, the agent's last action
-        :param sim_steps: number of JSBSim integration steps to perform following action
-            prior to making observation
-        :return: tuple of (observation, reward, done, info) where,
-            observation: array, agent's observation of the environment state
-            reward: float, the reward for that step
-            done: bool, True if the episode is over else False
-            info: dict, optional, containing diagnostic info for debugging etc.
-        """
-
-    ...
+        ...
 
     @abstractmethod
     def observe_first_state(self, sim: Simulation) -> np.ndarray:
-        """
-        Initialise any state/controls and get first state observation from reset sim.
-
-        :param sim: Simulation, the environment simulation
-        :return: np array, the first state observation of the episode
-        """
         ...
 
     @abstractmethod
     def get_initial_conditions(self) -> Optional[Dict[Property, float]]:
-        """
-        Returns dictionary mapping initial episode conditions to values.
-
-        Episode initial conditions (ICs) are defined by specifying values for
-        JSBSim properties, represented by their name (string) in JSBSim.
-
-        JSBSim uses a distinct set of properties for ICs, beginning with 'ic/'
-        which differ from property names during the simulation, e.g. "ic/u-fps"
-        instead of "velocities/u-fps". See https://jsbsim-team.github.io/jsbsim/
-
-        :return: dict mapping string for each initial condition property to
-            initial value, a float, or None to use Env defaults
-        """
         ...
 
     @abstractmethod
     def get_state_space(self) -> gym.Space:
-        """ Get the task's state Space object """
         ...
 
     @abstractmethod
     def get_action_space(self) -> gym.Space:
-        """ Get the task's action Space object """
         ...
 
 
 class FlightTask(Task, ABC):
-    """
-    Abstract superclass for flight tasks.
-
-    Concrete subclasses should implement the following:
-        state_variables attribute: tuple of Propertys, the task's state representation
-        action_variables attribute: tuple of Propertys, the task's actions
-        get_initial_conditions(): returns dict mapping InitialPropertys to initial values
-        _is_terminal(): determines episode termination
-        (optional) _new_episode_init(): performs any control input/initialisation on episode reset
-        (optional) _update_custom_properties: updates any custom properties in the sim
-    """
-    INITIAL_ALTITUDE_FT = 5000
-    base_state_variables = (prp.altitude_sl_ft, prp.pitch_rad, prp.roll_rad,
-                            prp.u_fps, prp.v_fps, prp.w_fps,
-                            prp.p_radps, prp.q_radps, prp.r_radps,
-                            prp.aileron_left, prp.aileron_right, prp.elevator,
-                            prp.rudder)
-    base_initial_conditions = types.MappingProxyType(  # MappingProxyType makes dict immutable
-        {prp.initial_altitude_ft: INITIAL_ALTITUDE_FT,
-         prp.initial_terrain_altitude_ft: 0.00000001,
-         prp.initial_longitude_geoc_deg: -2.3273,
-         prp.initial_latitude_geod_deg: 51.3781  # corresponds to UoBath
-         }
-    )
+    #INITIAL_ALTITUDE_FT = 5000
+    #base_state_variables = (prp.altitude_sl_ft, prp.pitch_rad, prp.roll_rad,
+    #                        prp.u_fps, prp.v_fps, prp.w_fps,
+    #                        prp.p_radps, prp.q_radps, prp.r_radps,
+    #                        prp.aileron_left, prp.aileron_right, prp.elevator,
+    #                        prp.rudder)
+    #base_initial_conditions = types.MappingProxyType(  # MappingProxyType makes dict immutable
+    #    {prp.initial_altitude_ft: INITIAL_ALTITUDE_FT,
+    #     prp.initial_terrain_altitude_ft: 0.00000001,
+    #     prp.initial_longitude_geoc_deg: -2.3273,
+    #     prp.initial_latitude_geod_deg: 51.3781  # corresponds to UoBath
+    #     }
+    #)
     last_agent_reward = Property('reward/last_agent_reward', 'agent reward from step; includes'
                                                              'potential-based shaping reward')
     last_assessment_reward = Property('reward/last_assess_reward', 'assessment reward from step;'
                                                                    'excludes shaping')
-    state_variables: Tuple[BoundedProperty, ...]
-    action_variables: Tuple[BoundedProperty, ...]
-    assessor: assessors.Assessor
-    State: Type[NamedTuple]
+    #state_variables: Tuple[BoundedProperty, ...]
+    #action_variables: Tuple[BoundedProperty, ...]
+    #assessor: assessors.Assessor
+    #State: Type[NamedTuple]
 
-    def __init__(self, assessor: assessors.Assessor, debug: bool = False) -> None:
+    def __init__(self, action_properties, state_properties, initial_states, debug: bool = False) -> None:
+        self.action_variables = tuple(action_properties)
+        self.state_variables = tuple(state_properties)
         self.last_state = None
-        self.assessor = assessor
         self._make_state_class()
+        self.initial_states = initial_states
         self.debug = debug
 
     def _make_state_class(self) -> None:
@@ -140,7 +91,7 @@ class FlightTask(Task, ABC):
         self._update_custom_properties(sim)
         state = self.State(*(sim[prop] for prop in self.state_variables))
         done = self._is_terminal(sim)
-        reward = self.assessor.assess(state, self.last_state, done)
+        reward = self._calculate_reward(state, self.last_state, done, sim)
         if done:
             reward = self._reward_terminal_override(reward, sim)
         if self.debug:
@@ -149,7 +100,8 @@ class FlightTask(Task, ABC):
         self.last_state = state
         info = {'reward': reward}
 
-        return state, reward.agent_reward(), done, info
+        #return state, reward.agent_reward(), done, info
+        return state, reward, done, info
 
     def _validate_state(self, state, done, action, reward):
         if any(math.isnan(el) for el in state):  # float('nan') in state doesn't work!
@@ -162,12 +114,51 @@ class FlightTask(Task, ABC):
             warnings.warn(msg, RuntimeWarning)
 
     def _store_reward(self, reward: rewards.Reward, sim: Simulation):
-        sim[self.last_agent_reward] = reward.agent_reward()
-        sim[self.last_assessment_reward] = reward.assessment_reward()
+        #sim[self.last_agent_reward] = reward.agent_reward()
+        #sim[self.last_assessment_reward] = reward.assessment_reward()
+        pass
 
     def _update_custom_properties(self, sim: Simulation) -> None:
         """ Calculates any custom properties which change every timestep. """
         pass
+
+    def observe_first_state(self, sim: Simulation) -> np.ndarray:
+        self._new_episode_init(sim)
+        self._update_custom_properties(sim)
+        state = self.State(*(sim[prop] for prop in self.state_variables))
+        self.last_state = state
+        return state
+
+    def _new_episode_init(self, sim: Simulation) -> None:
+        """
+        This method is called at the start of every episode. It is used to set
+        the value of any controls or environment properties not already defined
+        in the task's initial conditions.
+
+        By default it simply starts the aircraft engines.
+        """
+        #sim.start_engines()
+        #sim.raise_landing_gear()
+        self._store_reward(RewardStub(1.0, 1.0), sim)
+
+    #@abstractmethod
+    def get_initial_conditions(self) -> Dict[Property, float]:
+        return self.initial_states
+    #    ...
+
+    def get_state_space(self) -> gym.Space:
+        state_lows = np.array([state_var.min for state_var in self.state_variables])
+        state_highs = np.array([state_var.max for state_var in self.state_variables])
+        return gym.spaces.Box(low=state_lows, high=state_highs, dtype='float')
+
+    def get_action_space(self) -> gym.Space:
+        action_lows = np.array([act_var.min for act_var in self.action_variables])
+        action_highs = np.array([act_var.max for act_var in self.action_variables])
+        return gym.spaces.Box(low=action_lows, high=action_highs, dtype='float')
+
+    @abstractmethod
+    def _calculate_reward(self, state, last_state, done, sim):
+        ...
 
     @abstractmethod
     def _is_terminal(self, sim: Simulation) -> bool:
@@ -186,38 +177,18 @@ class FlightTask(Task, ABC):
         """
         ...
 
-    def observe_first_state(self, sim: Simulation) -> np.ndarray:
-        self._new_episode_init(sim)
-        self._update_custom_properties(sim)
-        state = self.State(*(sim[prop] for prop in self.state_variables))
-        self.last_state = state
-        return state
 
-    def _new_episode_init(self, sim: Simulation) -> None:
-        """
-        This method is called at the start of every episode. It is used to set
-        the value of any controls or environment properties not already defined
-        in the task's initial conditions.
+class MyFlightTask(FlightTask):
 
-        By default it simply starts the aircraft engines.
-        """
-        sim.start_engines()
-        sim.raise_landing_gear()
-        self._store_reward(RewardStub(1.0, 1.0), sim)
+    
+    def _calculate_reward(self, state, last_state, done, sim):
+        return 0
 
-    @abstractmethod
-    def get_initial_conditions(self) -> Dict[Property, float]:
-        ...
+    def _is_terminal(self, sim: Simulation) -> bool:
+        return False
 
-    def get_state_space(self) -> gym.Space:
-        state_lows = np.array([state_var.min for state_var in self.state_variables])
-        state_highs = np.array([state_var.max for state_var in self.state_variables])
-        return gym.spaces.Box(low=state_lows, high=state_highs, dtype='float')
-
-    def get_action_space(self) -> gym.Space:
-        action_lows = np.array([act_var.min for act_var in self.action_variables])
-        action_highs = np.array([act_var.max for act_var in self.action_variables])
-        return gym.spaces.Box(low=action_lows, high=action_highs, dtype='float')
+    def _reward_terminal_override(self, reward: rewards.Reward, sim: Simulation) -> bool:
+        return reward
 
 
 class Shaping(enum.Enum):

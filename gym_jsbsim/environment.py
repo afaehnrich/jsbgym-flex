@@ -3,70 +3,52 @@ import numpy as np
 from gym_jsbsim.tasks import Shaping, HeadingControlTask
 from gym_jsbsim.simulation import Simulation
 from gym_jsbsim.visualiser import FigureVisualiser, FlightGearVisualiser
-from gym_jsbsim.aircraft import Aircraft, cessna172P
+from gym_jsbsim.aircraft import Aircraft, cessna172P, aircrafts
 from typing import Type, Tuple, Dict
+from gym_jsbsim.properties import BoundedProperty, Property
+
+#from gym_jsbsim.configuration import Configuration
 
 
 class JsbSimEnv(gym.Env):
-    """
-    A class wrapping the JSBSim flight dynamics module (FDM) for simulating
-    aircraft as an RL environment conforming to the OpenAI Gym Env
-    interface.
+    #metadata = {'render.modes': ['human', 'flightgear']}
 
-    An JsbSimEnv is instantiated with a Task that implements a specific
-    aircraft control task with its own specific observation/action space and
-    variables and agent_reward calculation.
-
-    ATTRIBUTION: this class implements the OpenAI Gym Env API. Method
-    docstrings have been adapted or copied from the OpenAI Gym source code.
-    """
-    JSBSIM_DT_HZ: int = 60  # JSBSim integration frequency
-    metadata = {'render.modes': ['human', 'flightgear']}
-
-    def __init__(self, task_type: Type[HeadingControlTask], aircraft: Aircraft = cessna172P,
-                 agent_interaction_freq: int = 5, shaping: Shaping=Shaping.STANDARD, jsbsim_dir=''):
-        """
-        Constructor. Inits some internal state, but JsbSimEnv.reset() must be
-        called first before interacting with environment.
-
-        :param task_type: the Task subclass for the task agent is to perform
-        :param aircraft: the JSBSim aircraft to be used
-        :param agent_interaction_freq: int, how many times per second the agent
-            should interact with environment.
-        :param shaping: a HeadingControlTask.Shaping enum, what type of agent_reward
-            shaping to use (see HeadingControlTask for options)
-        """
-        if agent_interaction_freq > self.JSBSIM_DT_HZ:
+    def __init__(self, cfg: dict, task_type: Type[HeadingControlTask],
+                 shaping: Shaping=Shaping.STANDARD):
+        self.cfg = cfg or {}
+        self.cfgenv = cfg.get('environment') or {}
+        self.properties = self._load_properties(cfg.get('properties'))
+        self.action_properties = self._choose_properties(self.cfgenv.get('actions'), self.properties)
+        self.observation_properties = self._choose_properties(self.cfgenv.get('observations'), self.properties)
+        self.initial_states = self._get_initial_states(self.cfgenv.get('initial_state'), self.properties)
+        agent_interaction_freq = self.cfgenv.get('agent_interaction_freq') or 1
+        if agent_interaction_freq > self.cfgenv.get('jsbsim_dt_hz'):
             raise ValueError('agent interaction frequency must be less than '
                              'or equal to JSBSim integration frequency of '
-                             f'{self.JSBSIM_DT_HZ} Hz.')
-        self.jsbsim_dir = jsbsim_dir
-        self.sim: Simulation = None
-        self.sim_steps_per_agent_step: int = self.JSBSIM_DT_HZ // agent_interaction_freq
-        self.aircraft = aircraft
-        self.task = task_type(shaping, agent_interaction_freq, aircraft)
+                             f'{self.cfgenv.get("jsbsim_dt_hz")} Hz.')
+        self.jsbsim_dir = self.cfgenv.get('path_jsbsim') or ''
+        self.aircraft = aircrafts[self.cfgenv.get('aircraft')]
+        #self.task = task_type(shaping, agent_interaction_freq, self.aircraft)
+        self.task = task_type( self.action_properties, self.observation_properties, self.initial_states, debug = False)
+        init_conditions = self.task.get_initial_conditions()
+        self.sim = self._init_new_sim(self.cfgenv.get('jsbsim_dt_hz'), self.aircraft, init_conditions)
+        self.sim_steps_per_agent_step: int = self.cfgenv.get('jsbsim_dt_hz') // agent_interaction_freq
         # set Space objects
         self.observation_space: gym.spaces.Box = self.task.get_state_space()
         self.action_space: gym.spaces.Box = self.task.get_action_space()
         # set visualisation objects
-        self.figure_visualiser: FigureVisualiser = None
-        self.flightgear_visualiser: FlightGearVisualiser = None
+        self.visualisers = []
+        for key, item in self.cfg.get('visualiser').items() or {}:
+            if key == 'figure':
+                visualiser =FigureVisualiser(item, self.task.get_props_to_output())
+                self.visualisers.append(visualiser)
+            elif key == 'flightgear':
+                visualiser = FlightGearVisualiser(item, self.aircraft)
+                visualiser.configure_simulation_output(self.sim)
+                self.visualisers.append(visualiser)
         self.step_delay = None
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, Dict]:
-        """
-        Run one timestep of the environment's dynamics. When end of
-        episode is reached, you are responsible for calling `reset()`
-        to reset this environment's state.
-        Accepts an action and returns a tuple (observation, reward, done, info).
-
-        :param action: the agent's action, with same length as action variables.
-        :return:
-            state: agent's observation of the current environment
-            reward: amount of reward returned after previous action
-            done: whether the episode has ended, in which case further step() calls are undefined
-            info: auxiliary information, e.g. full reward shaping data
-        """
         if not (action.shape == self.action_space.shape):
             raise ValueError('mismatch between action and action space size')
 
@@ -74,78 +56,60 @@ class JsbSimEnv(gym.Env):
         return np.array(state), reward, done, info
 
     def reset(self):
-        """
-        Resets the state of the environment and returns an initial observation.
-
-        :return: array, the initial observation of the space.
-        """
         init_conditions = self.task.get_initial_conditions()
-        if self.sim:
-            self.sim.reinitialise(init_conditions)
-        else:
-            self.sim = self._init_new_sim(self.JSBSIM_DT_HZ, self.aircraft, init_conditions)
-
+        self.sim.reinitialise(init_conditions)
         state = self.task.observe_first_state(self.sim)
-
-        if self.flightgear_visualiser:
-            self.flightgear_visualiser.configure_simulation_output(self.sim)
-
         return np.array(state)
 
     def _init_new_sim(self, dt, aircraft, initial_conditions):
-        return Simulation(jsbsim_dir=self.jsbsim_dir, sim_frequency_hz=dt,
-                          aircraft=aircraft,
-                          init_conditions=initial_conditions)
+        vis = self.cfg.get('visualiser') or {}
+        allow_fg = vis.get('flightgear') is not None
+        return Simulation( jsbsim_dir=self.jsbsim_dir, sim_frequency_hz=dt, aircraft=aircraft,
+                          init_conditions=initial_conditions, allow_flightgear_output = allow_fg)
+
+    def _load_properties(self, cfgprop):
+        cfgprop = cfgprop or {}
+        properties = {}
+        for prop, attr in cfgprop.items():
+            name = attr.get('name')
+            desc = attr.get('desc')
+            min = attr.get('min')
+            max = attr.get('max')
+            if min and max:
+                p = BoundedProperty(name, desc, min, max)
+            else:
+                p =  Property(name, desc)
+            properties.update({prop: p})
+        return properties
+
+    def _choose_properties(self, prop_names, properties):
+        prop_names = prop_names or []
+        chosen = []
+        for name in prop_names:
+            p =  properties.get(name)
+            if p: chosen.append(p)
+        return chosen
+
+    def _get_initial_states(self, cfgstates, properties):
+        cfgstates = cfgstates or {}
+        states = {}
+        for name,value in cfgstates.items():
+            p =  properties.get(name)
+            if not p: continue
+            states.update({p:value})
+        return states
+                
 
     def render(self, mode='flightgear', flightgear_blocking=True):
-        """Renders the environment.
-        The set of supported modes varies per environment. (And some
-        environments do not support rendering at all.) By convention,
-        if mode is:
-        - human: render to the current display or terminal and
-          return nothing. Usually for human consumption.
-        - rgb_array: Return an numpy.ndarray with shape (x, y, 3),
-          representing RGB values for an x-by-y pixel image, suitable
-          for turning into a video.
-        - ansi: Return a string (str) or StringIO.StringIO containing a
-          terminal-style text representation. The text can include newlines
-          and ANSI escape sequences (e.g. for colors).
-        Note:
-            Make sure that your class's metadata 'render.modes' key includes
-              the list of supported modes. It's recommended to call super()
-              in implementations to use the functionality of this method.
-
-        :param mode: str, the mode to render with
-        :param flightgear_blocking: waits for FlightGear to load before
-            returning if True, else returns immediately
-        """
-        if mode == 'human':
-            if not self.figure_visualiser:
-                self.figure_visualiser = FigureVisualiser(self.sim,
-                                                          self.task.get_props_to_output())
-            self.figure_visualiser.plot(self.sim)
-        elif mode == 'flightgear':
-            if not self.flightgear_visualiser:
-                self.flightgear_visualiser = FlightGearVisualiser(self.sim,
-                                                                  self.task.get_props_to_output(),
-                                                                  flightgear_blocking)
-            self.flightgear_visualiser.plot(self.sim)
-        else:
-            super().render(mode=mode)
+        for v in self.visualisers:
+            v.plot(self.sim)
 
     def close(self):
-        """ Cleans up this environment's objects
-
-        Environments automatically close() when garbage collected or when the
-        program exits.
-        """
         if self.sim:
             self.sim.close()
-        if self.figure_visualiser:
-            self.figure_visualiser.close()
-        if self.flightgear_visualiser:
-            self.flightgear_visualiser.close()
-
+        for v in self.visualisers:
+            v.close()
+        
     def seed(self, seed=None):
         """
         Sets the seed for this env's random number generator(s).
