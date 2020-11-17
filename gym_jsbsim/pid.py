@@ -10,9 +10,12 @@ def limit_angle( angle, max_angle):
 
 class PID_angle(object):
 
-    def __init__(self, p=0, i=0, d=0, target=0, time=0, angle_max=float('inf'), out_min=float('inf'), out_max=float('inf'), anti_windup = 1):
+    type = 'pid_angle'
+
+    def __init__(self, name, p=0, i=0, d=0, time=0, angle_max=float('inf'), out_min=float('inf'), out_max=float('inf'), anti_windup = 1, target = 0):
+        self.name = name
         self.tune(p, i, d)
-        self.target = 0
+        self.target = target
         self._prev_time = time 
         self._prev_error = 0
         self.error = None
@@ -23,8 +26,8 @@ class PID_angle(object):
         self.anti_windup = anti_windup
 
     
-    def __call__(self, feedback, time=None):
-        if self.target is None: return
+    def __call__(self, feedback, target=None, time=None):
+        if target is not None: self.target = target
         error = self.error = limit_angle( self.target - feedback, self.angle_max)
         if time is None:
             dt = 1
@@ -40,20 +43,11 @@ class PID_angle(object):
         self._prev_error = error
         out = self._p*error + self._i*self._integral + self._d*derivative
         self._prev_time = time
+        #print('PID {}: {}->{} (t={})'.format(self.name, feedback, out, self.target))
         return out
-    
-     #bitte entfernen
-    def get_val(self, target, outer, time):
-        self.target = target
-        ret = self.__call__ (feedback=outer, time = time)
-        ret = np.clip(ret, self.out_min, self.out_max)
-        return ret
-
-    #bitte entfernen
-    def set_pid (self, kp, ki, kd):
-        self.tune(kp, ki, kd)
 
     def tune(self, p, i, d):
         self._p = p
         self._i = i
         self._d = d
+

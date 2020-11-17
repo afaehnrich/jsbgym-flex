@@ -14,6 +14,7 @@ from gym_jsbsim.aircraft import Aircraft
 from gym_jsbsim.rewards import RewardStub
 from abc import ABC, abstractmethod
 from typing import Optional, Sequence, Dict, Tuple, NamedTuple, Type
+from gym_jsbsim.pid import PID_angle
 
 
 class Task(ABC):
@@ -41,35 +42,20 @@ class Task(ABC):
 
 
 class FlightTask(Task, ABC):
-    #INITIAL_ALTITUDE_FT = 5000
-    #base_state_variables = (prp.altitude_sl_ft, prp.pitch_rad, prp.roll_rad,
-    #                        prp.u_fps, prp.v_fps, prp.w_fps,
-    #                        prp.p_radps, prp.q_radps, prp.r_radps,
-    #                        prp.aileron_left, prp.aileron_right, prp.elevator,
-    #                        prp.rudder)
-    #base_initial_conditions = types.MappingProxyType(  # MappingProxyType makes dict immutable
-    #    {prp.initial_altitude_ft: INITIAL_ALTITUDE_FT,
-    #     prp.initial_terrain_altitude_ft: 0.00000001,
-    #     prp.initial_longitude_geoc_deg: -2.3273,
-    #     prp.initial_latitude_geod_deg: 51.3781  # corresponds to UoBath
-    #     }
-    #)
+
     last_agent_reward = Property('reward/last_agent_reward', 'agent reward from step; includes'
                                                              'potential-based shaping reward')
     last_assessment_reward = Property('reward/last_assess_reward', 'assessment reward from step;'
                                                                    'excludes shaping')
-    #state_variables: Tuple[BoundedProperty, ...]
-    #action_variables: Tuple[BoundedProperty, ...]
-    #assessor: assessors.Assessor
-    #State: Type[NamedTuple]
-
-    def __init__(self, action_properties, state_properties, initial_states, debug: bool = False) -> None:
+                                                                   
+    def __init__(self, action_properties, state_properties, initial_states, pid_controls, debug: bool = False) -> None:
         self.action_variables = tuple(action_properties)
         self.state_variables = tuple(state_properties)
         self.last_state = None
         self._make_state_class()
         self.initial_states = initial_states
         self.debug = debug
+        self.pid_controls = pid_controls
 
     def _make_state_class(self) -> None:
         """ Creates a namedtuple for readable State data """
@@ -89,6 +75,7 @@ class FlightTask(Task, ABC):
             sim.run()
 
         self._update_custom_properties(sim)
+        self._run_pid_controls(self.pid_controls, sim)
         state = self.State(*(sim[prop] for prop in self.state_variables))
         done = self._is_terminal(sim)
         reward = self._calculate_reward(state, self.last_state, done, sim)
@@ -102,6 +89,10 @@ class FlightTask(Task, ABC):
 
         #return state, reward.agent_reward(), done, info
         return state, reward, done, info
+
+    def _run_pid_controls(self, pid_controls, sim):
+        for (pid, input, output, target) in pid_controls:
+            sim[output] = pid(sim[input], sim[target])
 
     def _validate_state(self, state, done, action, reward):
         if any(math.isnan(el) for el in state):  # float('nan') in state doesn't work!

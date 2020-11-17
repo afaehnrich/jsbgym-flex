@@ -6,6 +6,7 @@ from gym_jsbsim.visualiser import FigureVisualiser, FlightGearVisualiser
 from gym_jsbsim.aircraft import Aircraft, cessna172P, aircrafts
 from typing import Type, Tuple, Dict
 from gym_jsbsim.properties import BoundedProperty, Property
+from gym_jsbsim.pid import PID_angle
 
 #from gym_jsbsim.configuration import Configuration
 
@@ -28,8 +29,9 @@ class JsbSimEnv(gym.Env):
                              f'{self.cfgenv.get("jsbsim_dt_hz")} Hz.')
         self.jsbsim_dir = self.cfgenv.get('path_jsbsim') or ''
         self.aircraft = aircrafts[self.cfgenv.get('aircraft')]
+        self.pid_controls = self._load_pids(cfg.get('pid'), self.properties)
         #self.task = task_type(shaping, agent_interaction_freq, self.aircraft)
-        self.task = task_type( self.action_properties, self.observation_properties, self.initial_states, debug = False)
+        self.task = task_type( self.action_properties, self.observation_properties, self.initial_states, self.pid_controls, debug = False)
         init_conditions = self.task.get_initial_conditions()
         self.sim = self._init_new_sim(self.cfgenv.get('jsbsim_dt_hz'), self.aircraft, init_conditions)
         self.sim_steps_per_agent_step: int = self.cfgenv.get('jsbsim_dt_hz') // agent_interaction_freq
@@ -37,15 +39,7 @@ class JsbSimEnv(gym.Env):
         self.observation_space: gym.spaces.Box = self.task.get_state_space()
         self.action_space: gym.spaces.Box = self.task.get_action_space()
         # set visualisation objects
-        self.visualisers = []
-        for key, item in self.cfg.get('visualiser').items() or {}:
-            if key == 'figure':
-                visualiser =FigureVisualiser(item, self.task.get_props_to_output())
-                self.visualisers.append(visualiser)
-            elif key == 'flightgear':
-                visualiser = FlightGearVisualiser(item, self.aircraft)
-                visualiser.configure_simulation_output(self.sim)
-                self.visualisers.append(visualiser)
+        self.visualisers = self._load_visualisers(cfg)
         self.step_delay = None
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, Dict]:
@@ -98,7 +92,35 @@ class JsbSimEnv(gym.Env):
             if not p: continue
             states.update({p:value})
         return states
-                
+
+    def _load_pids(self,cfgpids, properties):
+        cfgpids = cfgpids or {}
+        pids = []
+        for name, par in cfgpids.items():
+            type = par['type']
+            if type == 'pid_angle':
+                p = PID_angle(name, par.get('p'), par.get('i'), par.get('d'),  0,
+                              par.get('angle_max'), par.get('out_min'), par.get('out_max'), par.get('anti_windup'))
+                input = self.properties[par.get('input')]
+                output = self.properties[par.get('output')]
+                target = self.properties[par.get('target')]
+                pids.append((p, input, output, target))
+        return pids
+
+    def _load_visualisers(self, cfg):
+        cfgvis =cfg.get('visualiser') or {}
+        if cfgvis.get('enable') == False:
+            return []
+        visualisers = []
+        for key, item in cfgvis.items() or {}:
+            if key == 'figure':
+                visualiser =FigureVisualiser(item, self.task.get_props_to_output())
+                visualisers.append(visualiser)
+            elif key == 'flightgear':
+                visualiser = FlightGearVisualiser(item, self.aircraft)
+                visualiser.configure_simulation_output(self.sim)
+                visualisers.append(visualiser)
+        return visualisers
 
     def render(self, mode='flightgear', flightgear_blocking=True):
         for v in self.visualisers:
