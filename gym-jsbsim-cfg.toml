@@ -3,17 +3,17 @@
 title = "gym-jsbsim Configuration"
 
 [environment]
-    jsbsim_dt_hz = 60  # JSBSim integration frequency
-    agent_interaction_freq = 5
+    jsbsim_dt_hz = 60  # JSBSim integration frequency in Herz
+    agent_interaction_freq = 5 # Interaction Frequency in Herz
     aircraft = "cessna172P"
-    path_jsbsim = "../jsbsim"
-    #actions = ['aileron_cmd', 'elevator_cmd', 'rudder_cmd']
-    actions = ['rudder_cmd']
+    path_jsbsim = "../jsbsim" #an System anpassen. 
+    # Im Unterordner "aircraft" sollten die Definitionen der FLugzeuge zu finden sein.
+    actions = ['target_roll']
     observations = ['roll_rad']
 
     [environment.initial_state]
         initial_altitude_ft = 5000
-        initial_terrain_altitude_ft = 0.00000001
+        initial_terrain_altitude_ft = 0.00000001 # 0.0 erzeugt wohl NaNs
         initial_longitude_geoc_deg = -2.3273
         initial_latitude_geod_deg = 51.3781  # corresponds to UoBath
         initial_u_fps = 120 #cruise speed Chessna = 120 ft/s
@@ -24,7 +24,7 @@ title = "gym-jsbsim Configuration"
         initial_r_radps = 0
         initial_roc_fpm = 0
         initial_heading_deg = 270
-        all_engine_running = 0 #-1: running
+        all_engine_running = 0 #-1: running 0: off
         gear = 0.0 #landing gear raised
         gear_all_cmd = 0.0 #landing gear raised
         target_roll = 0
@@ -62,10 +62,18 @@ title = "gym-jsbsim Configuration"
 
 [visualiser]
 
-    enable = false
+    #enable  true: Visualisierung eingeschaltet, Simulation in "Realgeschwindigkeit"
+    #       false: Visualisierung abgeschaltet, Simulation ohne Delay.
+    enable = false 
 
     [visualiser.flightgear]
-        start_fgfs = false
+        timefactor = 1  # sim speed relative to realtime, higher is faster
+        # start_fgfs  true: flightgear wird vom openAI-Gym gestartet.
+        #            false: flightgear muss vorher manuell gestartet werden. (siehe Datei flightgear.sh)
+        # manuelles Starten ist zuverlässiger und benötigt weniger Zeit. 
+        # Flightgear kann zwischen einzelnen Simulations-Sessions geöffnet bleiben
+        start_fgfs = false 
+        # die folgenden Parameter sind nur bei start_fgfs = true relevant
         time = 'noon'
         type = 'socket'
         direction = 'in'
@@ -73,11 +81,14 @@ title = "gym-jsbsim Configuration"
         server = ''
         port = 5550
         protocol = 'udp'
-        timefactor = 1  # sim speed relative to realtime, higher is faster
 
-    #[visualiser.figure]
+    # [visualiser.figure] # Auskommentieren = inaktiv
 
 [properties]
+# JSBSIM Properties. Siehe JSBSim Reference Manual.
+# Es können auch eigene Properties definiert werden,
+# z.B. als Input für PID-Regler. 
+
 #custom properties
     [properties.target_roll]
         name = 'custom/target-roll'

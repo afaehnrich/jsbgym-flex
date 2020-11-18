@@ -7,7 +7,7 @@ from datetime import datetime
 cfg = toml.load('gym-jsbsim-cfg.toml')
 
 def simCycle(name, env, outer, inner):
-    print ('Simulation {}: {}x{} steps'.format(name, outer, inner), end='\r')
+    print ('Simulation {}: {}x{} steps'.format(name, outer, inner),end='\r') 
     before = datetime.now()
     for _ in range(outer):
         env.reset()  
@@ -15,7 +15,8 @@ def simCycle(name, env, outer, inner):
             action=env.action_space.sample()
             env.step(action)
     after = datetime.now()
-    print ('Simulation {}: {}x{} steps:'.format(name, outer, inner), after-before)
+    dt = (after-before)
+    print ('Simulation {}: {}x{} steps: {}.{}s'.format(name, outer, inner, dt.seconds, dt.microseconds) )
 
 env = gym_jsbsim.environment.JsbSimEnv(cfg = cfg, task_type = MyFlightTask, shaping = Shaping.STANDARD)
 name = 'JSBSIM'
