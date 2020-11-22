@@ -19,22 +19,23 @@ class JsbSimEnv(gym.Env):
         self.cfg = cfg or {}
         self.cfgenv = cfg.get('environment') or {}
         self.properties = self._load_properties(cfg.get('properties'))
-        self.action_properties = self._choose_properties(self.cfgenv.get('actions'), self.properties)
-        self.observation_properties = self._choose_properties(self.cfgenv.get('observations'), self.properties)
-        self.initial_states = self._get_initial_states(self.cfgenv.get('initial_state'), self.properties)
-        agent_interaction_freq = self.cfgenv.get('agent_interaction_freq') or 1
-        if agent_interaction_freq > self.cfgenv.get('jsbsim_dt_hz'):
-            raise ValueError('agent interaction frequency must be less than '
-                             'or equal to JSBSim integration frequency of '
-                             f'{self.cfgenv.get("jsbsim_dt_hz")} Hz.')
+        action_properties = self._choose_properties(self.cfgenv.get('actions'), self.properties)
+        observation_properties = self._choose_properties(self.cfgenv.get('observations'), self.properties)
+        initial_states = self._get_initial_states(self.cfgenv.get('initial_state'), self.properties)
+        init_sequence = self._get_initial_states(self.cfgenv.get('init_sequence'), self.properties)
+        self.pid_controls = self._load_pids(cfg.get('pid'), self.properties)
+        simulation_dt = self.cfgenv.get('simulation_stepwidth')
+        controller_dt = self.cfgenv.get('controller_stepwidth')
+        observation_dt = self.cfgenv.get('observation_stepwidth')
         self.jsbsim_dir = self.cfgenv.get('path_jsbsim') or ''
         self.aircraft = aircrafts[self.cfgenv.get('aircraft')]
-        self.pid_controls = self._load_pids(cfg.get('pid'), self.properties)
         #self.task = task_type(shaping, agent_interaction_freq, self.aircraft)
-        self.task = task_type( self.action_properties, self.observation_properties, self.initial_states, self.pid_controls, debug = False)
+        self.task = task_type( action_properties, observation_properties, initial_states, init_sequence,
+                                self.pid_controls, simulation_dt, controller_dt, observation_dt,
+                                debug = False)
         init_conditions = self.task.get_initial_conditions()
-        self.sim = self._init_new_sim(self.cfgenv.get('jsbsim_dt_hz'), self.aircraft, init_conditions)
-        self.sim_steps_per_agent_step: int = self.cfgenv.get('jsbsim_dt_hz') // agent_interaction_freq
+        self.sim = self._init_new_sim(simulation_dt , self.aircraft, init_conditions)
+        #self.sim_steps_per_agent_step: int = self.simulation_freq  // self.observation_freq
         # set Space objects
         self.observation_space: gym.spaces.Box = self.task.get_state_space()
         self.action_space: gym.spaces.Box = self.task.get_action_space()
@@ -46,11 +47,12 @@ class JsbSimEnv(gym.Env):
         if not (action.shape == self.action_space.shape):
             raise ValueError('mismatch between action and action space size')
 
-        state, reward, done, info = self.task.task_step(self.sim, action, self.sim_steps_per_agent_step)
+        state, reward, done, info = self.task.task_step(self.sim, action)#, self.sim_steps_per_agent_step)
         return np.array(state), reward, done, info
 
     def reset(self):
         init_conditions = self.task.get_initial_conditions()
+        self.task.reset()
         self.sim.reinitialise(init_conditions)
         for v in self.visualisers:
             v.reset()
@@ -60,7 +62,7 @@ class JsbSimEnv(gym.Env):
     def _init_new_sim(self, dt, aircraft, initial_conditions):
         vis = self.cfg.get('visualiser') or {}
         allow_fg = vis.get('flightgear') is not None
-        return Simulation( jsbsim_dir=self.jsbsim_dir, sim_frequency_hz=dt, aircraft=aircraft,
+        return Simulation( jsbsim_dir=self.jsbsim_dir, sim_dt=dt, aircraft=aircraft,
                           init_conditions=initial_conditions, allow_flightgear_output = allow_fg)
 
     def _load_properties(self, cfgprop):
@@ -86,6 +88,16 @@ class JsbSimEnv(gym.Env):
             if p: chosen.append(p)
         return chosen
 
+    def get_property(self, name):
+        p = self.properties.get(name)
+        if p is None: return None
+        return self.sim[p]
+    
+    def set_property(self, name, value):
+        p = self.properties.get(name)
+        if p is None: return
+        self.sim[p] = value
+
     def _get_initial_states(self, cfgstates, properties):
         cfgstates = cfgstates or {}
         states = {}
@@ -97,7 +109,7 @@ class JsbSimEnv(gym.Env):
 
     def _load_pids(self,cfgpids, properties):
         cfgpids = cfgpids or {}
-        pids = []
+        pids = {}
         for name, par in cfgpids.items():
             type = par['type']
             if type == 'pid_angle':
@@ -106,7 +118,7 @@ class JsbSimEnv(gym.Env):
                 input = self.properties[par.get('input')]
                 output = self.properties[par.get('output')]
                 target = self.properties[par.get('target')]
-                pids.append((p, input, output, target))
+                pids.update({name:(p, input, output, target)})
         return pids
 
     def _load_visualisers(self, cfg):

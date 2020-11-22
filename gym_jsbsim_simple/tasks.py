@@ -48,14 +48,37 @@ class FlightTask(Task, ABC):
     last_assessment_reward = Property('reward/last_assess_reward', 'assessment reward from step;'
                                                                    'excludes shaping')
                                                                    
-    def __init__(self, action_properties, state_properties, initial_states, pid_controls, debug: bool = False) -> None:
+    def __init__(self, action_properties, state_properties, initial_states, init_sequence,  pid_controls, 
+                simulation_dt, controller_dt, observation_dt, debug: bool = False) -> None:
         self.action_variables = tuple(action_properties)
         self.state_variables = tuple(state_properties)
         self.last_state = None
         self._make_state_class()
         self.initial_states = initial_states
+        self.init_sequence = init_sequence
         self.debug = debug
         self.pid_controls = pid_controls
+        self.simulation_dt = simulation_dt
+        self.controller_dt = controller_dt
+        self.observation_dt = observation_dt
+        if self.simulation_dt is None: raise ValueError('No simulation Frequency given.')
+        if self.observation_dt is None: raise ValueError('No observation Frequency given.')
+        if len(self.pid_controls) > 0: 
+            if self.controller_dt is None:
+                raise ValueError('Automatic controllers present, but no'
+                                ' controller Frequency given.')
+        else: self.controller_dt = self.observation_dt
+        if not (self.simulation_dt < self.controller_dt):
+            raise ValueError('Condition not met: step width simulation < step width controller')
+        if not (self.simulation_dt < self.observation_dt):
+            raise ValueError('Condition not met: step width simulation < step width observation')
+        self.reset()
+
+    def reset(self):
+        self.controller_timer = self.controller_dt
+        self.observation_timer = self.observation_dt
+
+
 
     def _make_state_class(self) -> None:
         """ Creates a namedtuple for readable State data """
@@ -64,18 +87,24 @@ class FlightTask(Task, ABC):
                                  self.state_variables]
         self.State = namedtuple('State', legal_attribute_names)
 
-    def task_step(self, sim: Simulation, action: Sequence[float], sim_steps: int) \
+    def task_step(self, sim: Simulation, action: Sequence[float]) \
             -> Tuple[NamedTuple, float, bool, Dict]:
         # input actions
         for prop, command in zip(self.action_variables, action):
             sim[prop] = command
 
         # run simulation
-        for _ in range(sim_steps):
+        #for _ in range(sim_steps):
+        #    sim.run()
+        while self.observation_timer > 0:
             sim.run()
-
+            self.controller_timer -= self.simulation_dt
+            self.observation_timer -= self.simulation_dt
+            if self.controller_timer <= 0:
+                self._run_pid_controls(self.pid_controls, sim)
+                self.controller_timer += self.controller_dt
+        self.observation_timer += self.observation_dt
         self._update_custom_properties(sim)
-        self._run_pid_controls(self.pid_controls, sim)
         state = self.State(*(sim[prop] for prop in self.state_variables))
         done = self._is_terminal(sim)
         reward = self._calculate_reward(state, self.last_state, done, sim)
@@ -91,7 +120,7 @@ class FlightTask(Task, ABC):
         return state, reward, done, info
 
     def _run_pid_controls(self, pid_controls, sim):
-        for (pid, input, output, target) in pid_controls:
+        for (pid, input, output, target) in pid_controls.values():
             sim[output] = pid(sim[input], sim[target])
 
     def _validate_state(self, state, done, action, reward):
@@ -128,8 +157,11 @@ class FlightTask(Task, ABC):
 
         By default it simply starts the aircraft engines.
         """
+        for (prop, val) in self.init_sequence.items():
+            sim[prop] = val
         #sim.start_engines()
         #sim.raise_landing_gear()
+        #sim.set_throttle_mixture_controls(0.8, 0.8)
         self._store_reward(RewardStub(1.0, 1.0), sim)
 
     #@abstractmethod
@@ -171,7 +203,6 @@ class FlightTask(Task, ABC):
 
 class MyFlightTask(FlightTask):
 
-    
     def _calculate_reward(self, state, last_state, done, sim):
         return 0
 

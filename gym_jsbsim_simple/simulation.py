@@ -18,7 +18,7 @@ class Simulation(object):
     FULL = 'full'
 
     def __init__(self, jsbsim_dir,
-                 sim_frequency_hz: float = 60.0,
+                 sim_dt: float,
                  aircraft: Aircraft = cessna172P,
                  init_conditions: Dict[prp.Property, float] = None,
                  allow_flightgear_output: bool = True):
@@ -39,7 +39,7 @@ class Simulation(object):
             flightgear_output_config = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                                     self.OUTPUT_FILE)
             self.jsbsim.set_output_directive(flightgear_output_config)
-        self.sim_dt = 1.0 / sim_frequency_hz
+        self.sim_dt = sim_dt #1.0 / sim_frequency_hz
         self.aircraft = aircraft
         self.initialise(self.sim_dt, self.aircraft.jsbsim_id, init_conditions)
         self.wall_clock_dt = None

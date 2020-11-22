@@ -267,7 +267,6 @@ class FlightGearVisualiser(object):
             sim.set_simulation_time_factor(self.cfg.get('timefactor') or 1)
             sim.enable_flightgear_output()
             self.plotted_once = True
-            print('plottttted')
 
         
 

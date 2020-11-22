@@ -3,13 +3,15 @@
 title = "gym-jsbsim Configuration"
 
 [environment]
-    jsbsim_dt_hz = 60  # JSBSim integration frequency in Herz
-    agent_interaction_freq = 5 # Interaction Frequency in Herz
+    #assertion: simulation_freq >= controller_freq >= observation_freq
+    simulation_stepwidth = 0.01  # Step width of JSBSim in seconds
+    controller_stepwidth = 0.02 # Step width of controller actions (PID, Servo) seconds
+    observation_stepwidth = 1 # Step width of observations delivered to openAI gym in seconds
     aircraft = "cessna172P"
     path_jsbsim = "jsbsim_models" #an System anpassen. 
     # Im Unterordner "aircraft" sollten die Definitionen der FLugzeuge zu finden sein.
     actions = ['target_roll']
-    observations = ['roll_rad']
+    observations = ['heading_rad']
 
     [environment.initial_state]
         initial_altitude_ft = 5000
@@ -24,16 +26,32 @@ title = "gym-jsbsim Configuration"
         initial_r_radps = 0
         initial_roc_fpm = 0
         initial_heading_deg = 270
-        all_engine_running = 0 #-1: running 0: off
-        gear = 0.0 #landing gear raised
-        gear_all_cmd = 0.0 #landing gear raised
-        target_roll = 0
+        gear = 0.0 # landing gear raised
+        gear_all_cmd = 0.0 #l anding gear raised
+        target_roll = 0.0
         target_pitch = 0
+        target_heading = 0.0
 
-
-
+    [environment.init_sequence]
+        all_engine_running = -1 # -1 = running; 0 = off
+        throttle_cmd = 0.8
+        mixture_cmd = 0.8
 
 [pid]
+
+    [pid.heading]
+        type = 'pid_angle'
+        input = 'heading_rad'
+        output = 'target_roll'
+        target = 'target_heading'
+        angle_max = 6.28318530718 # 2 * math.pi
+        out_min = -0.75
+        out_max = 0.75
+        p = 0.2
+        i = 0.00001
+        d = 0.000
+        anti_windup = 10
+
     [pid.roll]
         type = 'pid_angle'
         input = 'roll_rad'
@@ -43,8 +61,8 @@ title = "gym-jsbsim Configuration"
         out_min = -1.0
         out_max = 1.0
         p = 0.15
-        i = 0.01
-        d = 0.001
+        i = 0.001 #i = 0.01
+        d = 0.0  #d = 0.001
         anti_windup = 2
 
     [pid.pitch]
@@ -64,7 +82,7 @@ title = "gym-jsbsim Configuration"
 
     #enable  true: Visualisierung eingeschaltet, Simulation in "Realgeschwindigkeit"
     #       false: Visualisierung abgeschaltet, Simulation ohne Delay.
-    enable = false 
+    enable = true
 
     [visualiser.flightgear]
         timefactor = 1  # sim speed relative to realtime, higher is faster
@@ -102,12 +120,23 @@ title = "gym-jsbsim Configuration"
         min = -1.57079632679 #-0.5 * math.pi
         max = 1.57079632679 #0.5 * math.pi
 
+    [properties.target_heading]
+        name = 'custom/target-heading'
+        description = 'target for PID heading'
+        min = 0.0
+        max = 6.28318530718 #2.0 * math.pi
+
 # position and attitude
     [properties.altitude_sl_ft]
         name = 'position/h-sl-ft'
         description = 'altitude above mean sea level [ft]'
         min = -1400
         max = 85000
+    [properties.altitude_sl_m]
+        name = 'position/h-sl-meters'
+        description = 'altitude above mean sea level [m]'
+        min = -427
+        max = 25908
     [properties.pitch_rad]
         name = 'attitude/pitch-rad'
         description = 'pitch [rad]'
@@ -123,6 +152,11 @@ title = "gym-jsbsim Configuration"
         description = 'heading [deg]'
         min = 0
         max = 360
+    [properties.heading_rad]
+        name = 'attitude/psi-rad'
+        description = 'heading [rad]'
+        min = -10
+        max = 10
     [properties.sideslip_deg]
         name = 'aero/beta-deg'
         description = 'sideslip [deg]'

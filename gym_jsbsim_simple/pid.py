@@ -42,6 +42,7 @@ class PID_angle(object):
             derivative = (err_diff) / dt
         self._prev_error = error
         out = self._p*error + self._i*self._integral + self._d*derivative
+        out = np.clip(out, self.out_min, self.out_max)
         self._prev_time = time
         #print('PID {}: {}->{} (t={})'.format(self.name, feedback, out, self.target))
         return out
