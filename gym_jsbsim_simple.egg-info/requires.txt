@@ -1,0 +1,4 @@
+gym
+jsbsim
+matplotlib
+numpy
