@@ -47,7 +47,7 @@ class JsbSimEnv(gym.Env):
         if not (action.shape == self.action_space.shape):
             raise ValueError('mismatch between action and action space size')
 
-        state, reward, done, info = self.task.task_step(self.sim, action)#, self.sim_steps_per_agent_step)
+        state, reward, done, info = self.task.task_step(self.sim, action, self)#, self.sim_steps_per_agent_step)
         return np.array(state), reward, done, info
 
     def reset(self):
@@ -73,10 +73,10 @@ class JsbSimEnv(gym.Env):
             desc = attr.get('desc')
             min = attr.get('min')
             max = attr.get('max')
-            if min and max:
-                p = BoundedProperty(name, desc, min, max)
-            else:
+            if min is None or max is None:
                 p =  Property(name, desc)
+            else:
+                p = BoundedProperty(name, desc, min, max)
             properties.update({prop: p})
         return properties
 

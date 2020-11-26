@@ -51,4 +51,10 @@ class PID_angle(object):
         self._p = p
         self._i = i
         self._d = d
+        self._prev_error = 0
+        self._integral = 0
+
+
+
+
 

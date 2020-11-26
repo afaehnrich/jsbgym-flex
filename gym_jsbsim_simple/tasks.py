@@ -68,10 +68,10 @@ class FlightTask(Task, ABC):
                 raise ValueError('Automatic controllers present, but no'
                                 ' controller Frequency given.')
         else: self.controller_dt = self.observation_dt
-        if not (self.simulation_dt < self.controller_dt):
-            raise ValueError('Condition not met: step width simulation < step width controller')
-        if not (self.simulation_dt < self.observation_dt):
-            raise ValueError('Condition not met: step width simulation < step width observation')
+        if not (self.simulation_dt <= self.controller_dt):
+            raise ValueError('Condition not met: step width simulation <= step width controller')
+        if not (self.simulation_dt <= self.observation_dt):
+            raise ValueError('Condition not met: step width simulation <= step width observation')
         self.reset()
 
     def reset(self):
@@ -87,7 +87,7 @@ class FlightTask(Task, ABC):
                                  self.state_variables]
         self.State = namedtuple('State', legal_attribute_names)
 
-    def task_step(self, sim: Simulation, action: Sequence[float]) \
+    def task_step(self, sim: Simulation, action: Sequence[float], env) \
             -> Tuple[NamedTuple, float, bool, Dict]:
         # input actions
         for prop, command in zip(self.action_variables, action):
@@ -106,10 +106,10 @@ class FlightTask(Task, ABC):
         self.observation_timer += self.observation_dt
         self._update_custom_properties(sim)
         state = self.State(*(sim[prop] for prop in self.state_variables))
-        done = self._is_terminal(sim)
-        reward = self._calculate_reward(state, self.last_state, done, sim)
+        done = self._is_terminal(sim, env)
+        reward = self._calculate_reward(state, self.last_state, done, sim, env)
         if done:
-            reward = self._reward_terminal_override(reward, sim)
+            reward = self._reward_terminal_override(reward, sim, env)
         if self.debug:
             self._validate_state(state, done, action, reward)
         self._store_reward(reward, sim)
@@ -180,11 +180,12 @@ class FlightTask(Task, ABC):
         return gym.spaces.Box(low=action_lows, high=action_highs, dtype='float')
 
     @abstractmethod
-    def _calculate_reward(self, state, last_state, done, sim):
+    def _calculate_reward(self, state, last_state, done, sim, env):
+
         ...
 
     @abstractmethod
-    def _is_terminal(self, sim: Simulation) -> bool:
+    def _is_terminal(self, sim: Simulation, env) -> bool:
         """ Determines whether the current episode should terminate.
 
         :param sim: the current simulation
@@ -193,7 +194,7 @@ class FlightTask(Task, ABC):
         ...
 
     @abstractmethod
-    def _reward_terminal_override(self, reward: rewards.Reward, sim: Simulation) -> bool:
+    def _reward_terminal_override(self, reward: rewards.Reward, sim: Simulation, env) -> bool:
         """
         Determines whether a custom reward is needed, e.g. because
         a terminal condition is met.
@@ -203,13 +204,27 @@ class FlightTask(Task, ABC):
 
 class MyFlightTask(FlightTask):
 
-    def _calculate_reward(self, state, last_state, done, sim):
-        return 0
+    
+    def _calculate_reward_lat(self, state, last_state, done, sim, env):
+        lat_m = env.get_property('dist_travel_lat_m')
+        reward = -abs(lat_m/1000)
+        if reward > -40/1000: reward = 1
+        return reward
 
-    def _is_terminal(self, sim: Simulation) -> bool:
+    def _calculate_reward(self, state, last_state, done, sim, env):
+        head_target = 0
+        head = env.get_property('heading_rad')
+        d1 = abs(head - head_target)
+        d2 = abs (head- (2*math.pi + head_target))
+        reward = -abs(min(d1,d2))
+        #if reward > -40/1000: reward = 1
+        return reward
+
+    def _is_terminal(self, sim: Simulation, env) -> bool:
+        if env.get_property('sim_time_s') > 200: return True
         return False
 
-    def _reward_terminal_override(self, reward: rewards.Reward, sim: Simulation) -> bool:
+    def _reward_terminal_override(self, reward: rewards.Reward, sim: Simulation, env) -> bool:
         return reward
 
 
