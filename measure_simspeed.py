@@ -4,7 +4,7 @@ from gym_jsbsim_simple.tasks import Shaping, MyFlightTask
 import toml
 from datetime import datetime
 
-cfg = toml.load('gym-jsbsim-cfg.toml')
+cfg = toml.load('gym-jsbsim-cfg_example.toml')
 
 def simCycle(name, env, outer, inner):
     print ('Simulation {}: {}x{} steps'.format(name, outer, inner),end='\r') 
