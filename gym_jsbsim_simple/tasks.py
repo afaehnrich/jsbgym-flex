@@ -210,7 +210,7 @@ class AFHeadingControlTask(FlightTask):
         d1 = abs(head - head_target)
         d2 = abs (head- (2*math.pi + head_target))
         reward = -abs(min(d1,d2)) #Annäherung aus zwei Richtungen möglich
-        #if reward > -40/1000: reward = 1
+        if reward > -0.1: reward  = (0.1 + reward)*10
         return reward
 
     def _is_terminal(self, sim: Simulation, env) -> bool:
@@ -226,8 +226,9 @@ class FlyAlongLineTask(FlightTask):
     
     def _calculate_reward(self, state, last_state, done, sim, env):
         lat_m = env.get_property('dist_travel_lat_m')
-        reward = -abs(lat_m/1000)
-        if reward > -40/1000: reward = 1
+        lon_m = env.get_property('dist_travel_lon_m')
+        reward = -abs(lat_m/1000)+abs(lon_m/1000)
+        #if reward > -40/1000: reward = 1
         return reward
 
     def _is_terminal(self, sim: Simulation, env) -> bool:
