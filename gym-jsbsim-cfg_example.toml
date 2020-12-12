@@ -1,0 +1,359 @@
+# This is a TOML document.
+
+title = "gym-jsbsim Configuration"
+
+[environment]
+    #assertion: simulation_freq >= controller_freq >= observation_freq
+    simulation_stepwidth = 0.01  # Step width of JSBSim in seconds
+    controller_stepwidth = 0.02 # Step width of controller actions (PID, Servo) seconds
+    observation_stepwidth = 1 # Step width of observations delivered to openAI gym in seconds
+    aircraft = "cessna172P"
+    path_jsbsim = "jsbsim_models" #an System anpassen. 
+    # Im Unterordner "aircraft" sollten die Definitionen der FLugzeuge zu finden sein.
+    actions = ['target_roll']
+    observations = ['heading_rad']
+
+    [environment.initial_state]
+        initial_altitude_ft = 5000
+        initial_terrain_altitude_ft = 0.00000001 # 0.0 erzeugt wohl NaNs
+        initial_longitude_geoc_deg = -2.3273
+        initial_latitude_geod_deg = 51.3781  # corresponds to UoBath
+        initial_u_fps = 120 #cruise speed Chessna = 120 ft/s
+        initial_v_fps = 0
+        initial_w_fps = 0
+        initial_p_radps = 0
+        initial_q_radps = 0
+        initial_r_radps = 0
+        initial_roc_fpm = 0
+        initial_heading_deg = 270
+        gear = 0.0 # landing gear raised
+        gear_all_cmd = 0.0 #l anding gear raised
+        target_roll = 0.0
+        target_pitch = 0
+        target_heading = 0.0
+
+    [environment.init_sequence]
+        all_engine_running = -1 # -1 = running; 0 = off
+        throttle_cmd = 0.8
+        mixture_cmd = 0.8
+
+[pid]
+
+    [pid.heading]
+        type = 'pid_angle'
+        input = 'heading_rad'
+        output = 'target_roll'
+        target = 'target_heading'
+        angle_max = 6.28318530718 # 2 * math.pi
+        out_min = -0.75
+        out_max = 0.75
+        p = 0.2
+        i = 0.00001
+        d = 0.000
+        anti_windup = 10
+
+    [pid.roll]
+        type = 'pid_angle'
+        input = 'roll_rad'
+        output = 'aileron_cmd'
+        target = 'target_roll'
+        angle_max = 6.28318530718 # 2 * math.pi
+        out_min = -1.0
+        out_max = 1.0
+        p = 0.15
+        i = 0.001 #i = 0.01
+        d = 0.0  #d = 0.001
+        anti_windup = 2
+
+    [pid.pitch]
+        type ='pid_angle'
+        input = 'pitch_rad'
+        output = 'elevator_cmd'
+        target = 'target_pitch'
+        angle_max = 6.28318530718 # 2 * math.pi
+        out_min = -1.0
+        out_max = 1.0
+        p = -0.4
+        i = -0.09
+        d = -0.001
+        anti_windup = 1.1
+
+[visualiser]
+
+    #enable  true: Visualisierung eingeschaltet, Simulation in "Realgeschwindigkeit"
+    #       false: Visualisierung abgeschaltet, Simulation ohne Delay.
+    enable = true
+
+    [visualiser.flightgear]
+        timefactor = 1  # sim speed relative to realtime, higher is faster
+        # start_fgfs  true: flightgear wird vom openAI-Gym gestartet.
+        #            false: flightgear muss vorher manuell gestartet werden. (siehe Datei flightgear.sh)
+        # manuelles Starten ist zuverlässiger und benötigt weniger Zeit. 
+        # Flightgear kann zwischen einzelnen Simulations-Sessions geöffnet bleiben
+        start_fgfs = false 
+        # die folgenden Parameter sind nur bei start_fgfs = true relevant
+        time = 'noon'
+        type = 'socket'
+        direction = 'in'
+        rate = 60
+        server = ''
+        port = 5550
+        protocol = 'udp'
+
+    # [visualiser.figure] # Auskommentieren = inaktiv
+
+[properties]
+# JSBSIM Properties. Siehe JSBSim Reference Manual.
+# Es können auch eigene Properties definiert werden,
+# z.B. als Input für PID-Regler. 
+
+#custom properties
+    [properties.target_roll]
+        name = 'custom/target-roll'
+        description = 'target for PID roll'
+        min = -1.57079632679 #-0.5 * math.pi
+        max = 1.57079632679 #0.5 * math.pi
+
+    [properties.target_pitch]
+        name = 'custom/target-pitch'
+        description = 'target for PID pitch'
+        min = -1.57079632679 #-0.5 * math.pi
+        max = 1.57079632679 #0.5 * math.pi
+
+    [properties.target_heading]
+        name = 'custom/target-heading'
+        description = 'target for PID heading'
+        min = 0.0
+        max = 6.28318530718 #2.0 * math.pi
+
+# position and attitude
+    [properties.altitude_sl_ft]
+        name = 'position/h-sl-ft'
+        description = 'altitude above mean sea level [ft]'
+        min = -1400
+        max = 85000
+    [properties.altitude_sl_m]
+        name = 'position/h-sl-meters'
+        description = 'altitude above mean sea level [m]'
+        min = -427
+        max = 25908
+    [properties.pitch_rad]
+        name = 'attitude/pitch-rad'
+        description = 'pitch [rad]'
+        min = -1.57079632679 #-0.5 * math.pi
+        max = 1.57079632679 #0.5 * math.pi
+    [properties.roll_rad]
+        name = 'attitude/roll-rad'
+        description = 'roll [rad]'
+        min = -1.57079632679 #-0.5 * math.pi
+        max = 1.57079632679 #0.5 * math.pi
+    [properties.heading_deg]
+        name = 'attitude/psi-deg'
+        description = 'heading [deg]'
+        min = 0
+        max = 360
+    [properties.heading_rad]
+        name = 'attitude/psi-rad'
+        description = 'heading [rad]'
+        min = -10
+        max = 10
+    [properties.sideslip_deg]
+        name = 'aero/beta-deg'
+        description = 'sideslip [deg]'
+        min = -180
+        max = 180
+    [properties.lat_geod_deg]
+        name = 'position/lat-geod-deg'
+        description = 'geocentric latitude [deg]'
+        min = -90
+        max = 90
+    [properties.lng_geoc_deg]
+        name = 'position/long-gc-deg'
+        description = 'geodesic longitude [deg]'
+        min = -180
+        max = 180
+    [properties.dist_travel_m]
+        name = 'position/distance-from-start-mag-mt'
+        description = 'distance travelled from starting position [m]'
+    [properties.dist_travel_lat_m]
+        name = 'position/distance-from-start-lat-mt'
+        description = 'latitude distance travelled from starting position [m]'
+    [properties.dist_travel_lon_m]
+        name = 'position/distance-from-start-lon-mt'
+        description = 'longitude distance travelled from starting position [m]'
+
+# velocities
+    [properties.u_fps]
+        name = 'velocities/u-fps'
+        description = 'body frame x-axis velocity [ft/s]'
+        min = -2200
+        max = 2200
+    [properties.v_fps]
+        name = 'velocities/v-fps'
+        description = 'body frame y-axis velocity [ft/s]'
+        min = -2200
+        max = 2200
+    [properties.w_fps]
+        name = 'velocities/w-fps'
+        description = 'body frame z-axis velocity [ft/s]'
+        min = -2200
+        max = 2200
+    [properties.v_north_fps]
+        name = 'velocities/v-north-fps'
+        description = 'velocity true north [ft/s]'
+    [properties.v_east_fps]
+        name = 'velocities/v-east-fps'
+        description = 'velocity east [ft/s]'
+    [properties.v_down_fps]
+        name = 'velocities/v-down-fps'
+        description = 'velocity downwards [ft/s]'
+
+    [properties.p_radps]
+        name = 'velocities/p-rad_sec'
+        description = 'roll rate [rad/s]'
+        min = -6.28318530718 # -2 * math.pi
+        max = 6.28318530718 # 2 * math.pi
+    [properties.q_radps]
+        name = 'velocities/q-rad_sec'
+        description = 'pitch rate [rad/s]'
+        min = -6.28318530718 # -2 * math.pi
+        max = 6.28318530718 # 2 * math.pi
+    [properties.r_radps]
+        name = 'velocities/r-rad_sec'
+        description = 'yaw rate [rad/s]'
+        min = -6.28318530718 # -2 * math.pi
+        max = 6.28318530718 # 2 * math.pi
+    [properties.altitude_rate_fps]
+        name = 'velocities/h-dot-fps'
+        description = 'Rate of altitude change [ft/s]'
+
+# controls state
+    [properties.aileron_left]
+        name = 'fcs/left-aileron-pos-norm'
+        description = 'left aileron position, normalised'
+        min = -1
+        max = 1
+    [properties.aileron_right]
+        name = 'fcs/right-aileron-pos-norm'
+        description = 'right aileron position, normalised'
+        min = -1
+        max = 1
+    [properties.levator]
+        name = 'fcs/elevator-pos-norm'
+        description = 'elevator position, normalised'
+        min = -1
+        max = 1
+    [properties.rudder]
+        name = 'fcs/rudder-pos-norm'
+        description = 'rudder position, normalised'
+        min = -1
+        max = 1
+    [properties.throttle]
+        name = 'fcs/throttle-pos-norm'
+        description = 'throttle position, normalised'
+        min = 0
+        max = 1
+    [properties.gear]
+        name = 'gear/gear-pos-norm'
+        description = 'landing gear position, normalised'
+        min = 0
+        max = 1
+
+# engines
+    [properties.engine_running]
+        name = 'propulsion/engine/set-running'
+        description = 'engine running (0/1 bool)'
+    [properties.all_engine_running]
+        name = 'propulsion/set-running'
+        description = 'set engine running (-1 for all engines)'
+    [properties.engine_thrust_lbs]
+        name = 'propulsion/engine/thrust-lbs'
+        description = 'engine thrust [lb]'
+
+# controls command
+    [properties.aileron_cmd]
+        name = 'fcs/aileron-cmd-norm'
+        description = 'aileron commanded position, normalised'
+        min = -1
+        max = 1
+    [properties.elevator_cmd]
+        name = 'fcs/elevator-cmd-norm'
+        description = 'elevator commanded position, normalised'
+        min = -1
+        max = 1
+    [properties.rudder_cmd]
+        name = 'fcs/rudder-cmd-norm'
+        description = 'rudder commanded position, normalised'
+        min = -1
+        max = 1
+    [properties.throttle_cmd]
+        name = 'fcs/throttle-cmd-norm'
+        description = 'throttle commanded position, normalised'
+        min = 0
+        max = 1
+    [properties.mixture_cmd]
+        name = 'fcs/mixture-cmd-norm'
+        description = 'engine mixture setting, normalised'
+        min = 0
+        max = 1
+    [properties.throttle_1_cmd]
+        name = 'fcs/throttle-cmd-norm[1]'
+        description = 'throttle 1 commanded position, normalised'
+        min = 0
+        max = 1
+    [properties.mixture_1_cmd]
+        name = 'fcs/mixture-cmd-norm[1]'
+        description = 'engine mixture 1 setting, normalised'
+        min = 0
+        max = 1
+    [properties.gear_all_cmd]
+        name = 'gear/gear-cmd-norm'
+        description = 'all landing gear commanded position, normalised'
+        min = 0
+        max = 1
+
+# simulation
+    [properties.sim_dt]
+        name = 'simulation/dt'
+        description = 'JSBSim simulation timestep [s]'
+    [properties.sim_time_s]
+        name = 'simulation/sim-time-sec'
+        description = 'Simulation time [s]'
+
+# initial conditions
+    [properties.initial_altitude_ft]
+        name = 'ic/h-sl-ft'
+        description = 'initial altitude MSL [ft]'
+    [properties.initial_terrain_altitude_ft]
+        name = 'ic/terrain-elevation-ft'
+        description = 'initial terrain alt [ft]'
+    [properties.initial_longitude_geoc_deg]
+        name = 'ic/long-gc-deg'
+        description = 'initial geocentric longitude [deg]'
+    [properties.initial_latitude_geod_deg]
+        name = 'ic/lat-geod-deg'
+        description = 'initial geodesic latitude [deg]'
+    [properties.initial_u_fps]
+        name = 'ic/u-fps'
+        description = 'body frame x-axis velocity; positive forward [ft/s]'
+    [properties.initial_v_fps]
+        name = 'ic/v-fps'
+        description = 'body frame y-axis velocity; positive right [ft/s]'
+    [properties.initial_w_fps]
+        name = 'ic/w-fps'
+        description = 'body frame z-axis velocity; positive down [ft/s]'
+    [properties.initial_p_radps]
+        name = 'ic/p-rad_sec'
+        description = 'roll rate [rad/s]'
+    [properties.initial_q_radps]
+        name = 'ic/q-rad_sec'
+        description = 'pitch rate [rad/s]'
+    [properties.initial_r_radps]
+        name = 'ic/r-rad_sec'
+        description = 'yaw rate [rad/s]'
+    [properties.initial_roc_fpm]
+        name = 'ic/roc-fpm'
+        description = 'initial rate of climb [ft/min]'
+    [properties.initial_heading_deg]
+        name = 'ic/psi-true-deg'
+        description = 'initial (true) heading [deg]'

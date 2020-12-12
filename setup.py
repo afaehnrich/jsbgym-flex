@@ -1,17 +1,17 @@
 from setuptools import setup, find_packages
 
 
-setup(name='gym_jsbsim',
+setup(name='gym_jsbsim_simple',
       version='0.1',
       description='A package of reinforcement learning environments for flight '
                   'control using the JSBSim flight dynamics model.',
-      url='https://github.com/Gor-Ren/gym-jsbsim',
-      author='Gor-Ren',
+      author='AF',
       license='MIT',
       install_requires=[
             'numpy',
             'gym',
             'matplotlib',
+            'jsbsim'
       ],
       packages=find_packages(),
       classifiers=[
