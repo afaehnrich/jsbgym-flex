@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 
-setup(name='gym_jsbsim_simple',
+setup(name='jsbgym_flex',
       version='0.1',
       description='A package of reinforcement learning environments for flight '
                   'control using the JSBSim flight dynamics model.',

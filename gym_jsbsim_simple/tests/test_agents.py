@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
-from gym_jsbsim_simple.agents import RandomAgent, ConstantAgent
-from gym_jsbsim_simple.tests.stubs import FlightTaskStub
+from jsbgym_flex.agents import RandomAgent, ConstantAgent
+from jsbgym_flex.tests.stubs import FlightTaskStub
 
 
 class TestRandomAgent(unittest.TestCase):
