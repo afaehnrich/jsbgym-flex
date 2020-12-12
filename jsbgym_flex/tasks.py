@@ -6,15 +6,15 @@ import math
 import enum
 import warnings
 from collections import namedtuple
-import gym_jsbsim_simple.properties as prp
-from gym_jsbsim_simple import assessors, rewards, utils
-from gym_jsbsim_simple.simulation import Simulation
-from gym_jsbsim_simple.properties import BoundedProperty, Property
-from gym_jsbsim_simple.aircraft import Aircraft
-from gym_jsbsim_simple.rewards import RewardStub
+import jsbgym_flex.properties as prp
+from jsbgym_flex import assessors, rewards, utils
+from jsbgym_flex.simulation import Simulation
+from jsbgym_flex.properties import BoundedProperty, Property
+from jsbgym_flex.aircraft import Aircraft
+from jsbgym_flex.rewards import RewardStub
 from abc import ABC, abstractmethod
 from typing import Optional, Sequence, Dict, Tuple, NamedTuple, Type
-from gym_jsbsim_simple.pid import PID_angle
+from jsbgym_flex.pid import PID_angle
 
 
 class Task(ABC):

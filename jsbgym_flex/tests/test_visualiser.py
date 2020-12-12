@@ -1,10 +1,10 @@
 import time
 import unittest
-from gym_jsbsim_simple.environment import JsbSimEnv
-from gym_jsbsim_simple.visualiser import FigureVisualiser, FlightGearVisualiser
-from gym_jsbsim_simple.tests.stubs import BasicFlightTask, DefaultSimStub
+from jsbgym_flex.environment import JsbSimEnv
+from jsbgym_flex.visualiser import FigureVisualiser, FlightGearVisualiser
+from jsbgym_flex.tests.stubs import BasicFlightTask, DefaultSimStub
 import matplotlib.pyplot as plt
-import gym_jsbsim_simple.visualiser
+import jsbgym_flex.visualiser
 
 
 class TestFigureVisualiser(unittest.TestCase):

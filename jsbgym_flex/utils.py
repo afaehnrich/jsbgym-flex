@@ -1,7 +1,7 @@
 import functools
 import operator
 from typing import Tuple
-from gym_jsbsim_simple.aircraft import cessna172P, a320, f15
+from jsbgym_flex.aircraft import cessna172P, a320, f15
 from typing import Dict, Iterable
 
 
@@ -39,7 +39,7 @@ def get_env_id(task_type, aircraft, shaping, enable_flightgear) -> str:
 def get_env_id_kwargs_map() -> Dict[str, Tuple]:
     """ Returns all environment IDs mapped to tuple of (task, aircraft, shaping, flightgear) """
     # lazy import to avoid circular dependencies
-    from gym_jsbsim_simple.tasks import Shaping, HeadingControlTask, TurnHeadingControlTask
+    from jsbgym_flex.tasks import Shaping, HeadingControlTask, TurnHeadingControlTask
 
     map = {}
     for task_type in (HeadingControlTask, TurnHeadingControlTask):

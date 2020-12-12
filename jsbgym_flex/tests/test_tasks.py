@@ -2,12 +2,12 @@ import unittest
 import math
 import numpy as np
 import sys
-import gym_jsbsim_simple.properties as prp
-from gym_jsbsim_simple import rewards, utils
-from gym_jsbsim_simple.assessors import Assessor, AssessorImpl
-from gym_jsbsim_simple.aircraft import Aircraft, cessna172P
-from gym_jsbsim_simple.tasks import Shaping, HeadingControlTask, TurnHeadingControlTask
-from gym_jsbsim_simple.tests.stubs import SimStub, TransitioningSimStub
+import jsbgym_flex.properties as prp
+from jsbgym_flex import rewards, utils
+from jsbgym_flex.assessors import Assessor, AssessorImpl
+from jsbgym_flex.aircraft import Aircraft, cessna172P
+from jsbgym_flex.tasks import Shaping, HeadingControlTask, TurnHeadingControlTask
+from jsbgym_flex.tests.stubs import SimStub, TransitioningSimStub
 
 
 class TestHeadingControlTask(unittest.TestCase):

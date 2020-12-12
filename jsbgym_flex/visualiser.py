@@ -2,9 +2,9 @@ import gym
 import subprocess
 import time
 import matplotlib.pyplot as plt
-import gym_jsbsim_simple.properties as prp
-from gym_jsbsim_simple.aircraft import Aircraft
-from gym_jsbsim_simple.simulation import Simulation
+import jsbgym_flex.properties as prp
+from jsbgym_flex.aircraft import Aircraft
+from jsbgym_flex.simulation import Simulation
 from typing import NamedTuple, Tuple
 #from gym_jsbsim.configuration import Configuration
 

@@ -2,12 +2,12 @@ import unittest
 import gym
 import numpy as np
 import matplotlib.pyplot as plt
-import gym_jsbsim_simple.properties as prp
-import gym_jsbsim_simple
-from gym_jsbsim_simple import aircraft, tasks, utils
-from gym_jsbsim_simple.environment import JsbSimEnv, NoFGJsbSimEnv
-from gym_jsbsim_simple.tests.stubs import BasicFlightTask
-from gym_jsbsim_simple.visualiser import FlightGearVisualiser
+import jsbgym_flex.properties as prp
+import jsbgym_flex
+from jsbgym_flex import aircraft, tasks, utils
+from jsbgym_flex.environment import JsbSimEnv, NoFGJsbSimEnv
+from jsbgym_flex.tests.stubs import BasicFlightTask
+from jsbgym_flex.visualiser import FlightGearVisualiser
 
 
 class TestJsbSimEnv(unittest.TestCase):

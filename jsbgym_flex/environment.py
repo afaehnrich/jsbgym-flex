@@ -1,14 +1,14 @@
 import gym
 import numpy as np
-from gym_jsbsim_simple.tasks import Shaping, HeadingControlTask
-from gym_jsbsim_simple.simulation import Simulation
-from gym_jsbsim_simple.visualiser import FigureVisualiser, FlightGearVisualiser
-from gym_jsbsim_simple.aircraft import Aircraft, cessna172P, aircrafts
+from jsbgym_flex.tasks import Shaping, HeadingControlTask
+from jsbgym_flex.simulation import Simulation
+from jsbgym_flex.visualiser import FigureVisualiser, FlightGearVisualiser
+from jsbgym_flex.aircraft import Aircraft, cessna172P, aircrafts
 from typing import Type, Tuple, Dict
-from gym_jsbsim_simple.properties import BoundedProperty, Property
-from gym_jsbsim_simple.pid import PID_angle
+from jsbgym_flex.properties import BoundedProperty, Property
+from jsbgym_flex.pid import PID_angle
 
-#from gym_jsbsim_simple.configuration import Configuration
+#from jsbgym_flex.configuration import Configuration
 
 
 class JsbSimEnv(gym.Env):
