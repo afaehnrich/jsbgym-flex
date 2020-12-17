@@ -10,6 +10,7 @@ title = "gym-jsbsim Configuration"
     aircraft = "cessna172P"
     path_jsbsim = "jsbsim_models" #an System anpassen. 
     # Im Unterordner "aircraft" sollten die Definitionen der FLugzeuge zu finden sein.
+    task = 'FlyAlongLine'
     actions = ['target_roll']
     observations = ['heading_rad']
 

@@ -40,6 +40,9 @@ class Task(ABC):
     def get_action_space(self) -> gym.Space:
         ...
 
+    @abstractmethod
+    def init_reward(self, init):
+        ...
 
 class FlightTask(Task, ABC):
 
@@ -201,14 +204,20 @@ class FlightTask(Task, ABC):
         """
         ...
 
+    @abstractmethod
+    def init_reward(self, init):
+        ...
+
 
 class AFHeadingControlTask(FlightTask):
 
+    def init_reward(self, init):
+        self.head_target = init['head_target']
+
     def _calculate_reward(self, state, last_state, done, sim, env):
-        head_target = 0
         head = env.get_property('heading_rad')
-        d1 = abs(head - head_target)
-        d2 = abs (head- (2*math.pi + head_target))
+        d1 = abs(head - self.head_target)
+        d2 = abs (head- (2*math.pi + self.head_target))
         reward = -abs(min(d1,d2)) #Annäherung aus zwei Richtungen möglich
         if reward > -0.1: reward  = (0.1 + reward)*10
         return reward
@@ -221,14 +230,40 @@ class AFHeadingControlTask(FlightTask):
         return reward
 
 
+
 class FlyAlongLineTask(FlightTask):
+
+    def init_reward(self, init):
+        pass
 
     
     def _calculate_reward(self, state, last_state, done, sim, env):
-        lat_m = env.get_property('dist_travel_lat_m')
-        lon_m = env.get_property('dist_travel_lon_m')
-        reward = -abs(lat_m/1000)+abs(lon_m/1000)
-        #if reward > -40/1000: reward = 1
+        delta_lat = env.get_property('lat_geod_deg') - env.get_property('initial_latitude_geod_deg')
+        delta_lon = env.get_property('lng_geoc_deg') - env.get_property('initial_longitude_geoc_deg')
+        #reward = -abs(delta_lon)
+        #if reward > -0.01: reward = -reward
+        reward = abs(delta_lat)
+        return reward
+
+    def _is_terminal(self, sim: Simulation, env) -> bool:
+        if env.get_property('sim_time_s') > 200: return True
+        return False
+
+    def _reward_terminal_override(self, reward: rewards.Reward, sim: Simulation, env) -> bool:
+        return reward
+
+class FindTargetTask(FlightTask):
+
+    def init_reward(self, init):
+        pass
+
+    
+    def _calculate_reward(self, state, last_state, done, sim, env):
+        delta_lat = env.get_property('lat_geod_deg') - env.get_property('initial_latitude_geod_deg')
+        delta_lon = env.get_property('lng_geoc_deg') - env.get_property('initial_longitude_geoc_deg')
+        #reward = -abs(delta_lon)
+        #if reward > -0.01: reward = -reward
+        reward = abs(delta_lat)
         return reward
 
     def _is_terminal(self, sim: Simulation, env) -> bool:
@@ -243,6 +278,10 @@ class Shaping(enum.Enum):
     EXTRA = 'EXTRA'
     EXTRA_SEQUENTIAL = 'EXTRA_SEQUENTIAL'
 
+task_dict = {
+    'HeadingControl': AFHeadingControlTask,
+    'FlyAlongLine': FlyAlongLineTask
+}
 
 class HeadingControlTask(FlightTask):
     """

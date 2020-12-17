@@ -1,6 +1,6 @@
 import gym
 import numpy as np
-from jsbgym_flex.tasks import Shaping, HeadingControlTask
+from jsbgym_flex.tasks import Shaping, task_dict
 from jsbgym_flex.simulation import Simulation
 from jsbgym_flex.visualiser import FigureVisualiser, FlightGearVisualiser
 from jsbgym_flex.aircraft import Aircraft, cessna172P, aircrafts
@@ -14,25 +14,30 @@ from jsbgym_flex.pid import PID_angle
 class JsbSimEnv(gym.Env):
     #metadata = {'render.modes': ['human', 'flightgear']}
 
-    def __init__(self, cfg: dict, task_type: Type[HeadingControlTask],
+    def __init__(self, cfg: dict, #task_type: Type[HeadingControlTask],
                  shaping: Shaping=Shaping.STANDARD):
         self.cfg = cfg or {}
-        self.cfgenv = cfg.get('environment') or {}
+        self.cfgenv = cfg.get('environment')
+        #self.cfgtask = next(iter(cfg.get('tasks').values())) Für Multi-Agent (TODO)
         self.properties = self._load_properties(cfg.get('properties'))
         action_properties = self._choose_properties(self.cfgenv.get('actions'), self.properties)
         observation_properties = self._choose_properties(self.cfgenv.get('observations'), self.properties)
         initial_states = self._get_initial_states(self.cfgenv.get('initial_state'), self.properties)
         init_sequence = self._get_initial_states(self.cfgenv.get('init_sequence'), self.properties)
-        self.pid_controls = self._load_pids(cfg.get('pid'), self.properties)
+        active_pids = self.cfgenv.get('pids')
+        self.pid_controls = self._load_pids(cfg.get('pid'), active_pids, self.properties)
+        print (self.pid_controls)
         simulation_dt = self.cfgenv.get('simulation_stepwidth')
         controller_dt = self.cfgenv.get('controller_stepwidth')
         observation_dt = self.cfgenv.get('observation_stepwidth')
         self.jsbsim_dir = self.cfgenv.get('path_jsbsim') or ''
         self.aircraft = aircrafts[self.cfgenv.get('aircraft')]
         #self.task = task_type(shaping, agent_interaction_freq, self.aircraft)
-        self.task = task_type( action_properties, observation_properties, initial_states, init_sequence,
+        self.task_type = task_dict.get(self.cfgenv.get('task'))
+        self.task = self.task_type( action_properties, observation_properties, initial_states, init_sequence,
                                 self.pid_controls, simulation_dt, controller_dt, observation_dt,
                                 debug = False)
+        self.task.init_reward(self.cfgenv.get('task_init'))
         init_conditions = self.task.get_initial_conditions()
         self.sim = self._init_new_sim(simulation_dt , self.aircraft, init_conditions)
         #self.sim_steps_per_agent_step: int = self.simulation_freq  // self.observation_freq
@@ -60,13 +65,13 @@ class JsbSimEnv(gym.Env):
         return np.array(state)
 
     def _init_new_sim(self, dt, aircraft, initial_conditions):
-        vis = self.cfg.get('visualiser') or {}
+        vis = self.cfg.get('visualiser')
         allow_fg = vis.get('flightgear') is not None
         return Simulation( jsbsim_dir=self.jsbsim_dir, sim_dt=dt, aircraft=aircraft,
                           init_conditions=initial_conditions, allow_flightgear_output = allow_fg)
 
     def _load_properties(self, cfgprop):
-        cfgprop = cfgprop or {}
+        cfgprop = cfgprop
         properties = {}
         for prop, attr in cfgprop.items():
             name = attr.get('name')
@@ -81,21 +86,22 @@ class JsbSimEnv(gym.Env):
         return properties
 
     def _choose_properties(self, prop_names, properties):
-        prop_names = prop_names or []
+        prop_names = prop_names
         chosen = []
         for name in prop_names:
             p =  properties.get(name)
-            if p: chosen.append(p)
+            if p is None: raise Exception('choose_property: Property "{}" not found.'.format(name))
+            chosen.append(p)
         return chosen
 
     def get_property(self, name):
         p = self.properties.get(name)
-        if p is None: return None
+        if p is None: raise Exception('get_property: Property "{}" not found.'.format(name))
         return self.sim[p]
     
     def set_property(self, name, value):
         p = self.properties.get(name)
-        if p is None: return
+        if p is None: raise Exception('set_property: Property "{}" not found.'.format(name))
         self.sim[p] = value
 
     def _get_initial_states(self, cfgstates, properties):
@@ -103,14 +109,18 @@ class JsbSimEnv(gym.Env):
         states = {}
         for name,value in cfgstates.items():
             p =  properties.get(name)
-            if not p: continue
+            if p is None: raise Exception('_get_initial_state: Property "{}" not found.'.format(name))
             states.update({p:value})
         return states
 
-    def _load_pids(self,cfgpids, properties):
+    def _load_pids(self,cfgpids, active_pids, properties):
         cfgpids = cfgpids or {}
         pids = {}
-        for name, par in cfgpids.items():
+        for name in active_pids:
+            par = cfgpids.get(name)
+            if par is None: raise Exception('_load_pids: PID"{}" not found.'.format(name))
+        #for name, par in cfgpids.items():
+        #    if not name in active_pids: continue
             type = par['type']
             if type == 'pid_angle':
                 p = PID_angle(name, par.get('p'), par.get('i'), par.get('d'),  0,
