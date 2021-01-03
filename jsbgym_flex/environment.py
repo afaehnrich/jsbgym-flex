@@ -7,12 +7,16 @@ from jsbgym_flex.aircraft import Aircraft, cessna172P, aircrafts
 from typing import Type, Tuple, Dict
 from jsbgym_flex.properties import BoundedProperty, Property
 from jsbgym_flex.pid import PID_angle
+from collections import namedtuple  
 
 #from jsbgym_flex.configuration import Configuration
 
 
 class JsbSimEnv(gym.Env):
-    #metadata = {'render.modes': ['human', 'flightgear']}
+    metadata = {'render.modes': ['human', 'flightgear']}
+
+    Task = namedtuple('Task', ['task', 'state_properties', 'action_properties', \
+        'observation_space', 'action_space', 'actor', 'critic'])
 
     def __init__(self, cfg: dict, #task_type: Type[HeadingControlTask],
                  shaping: Shaping=Shaping.STANDARD):
@@ -20,49 +24,93 @@ class JsbSimEnv(gym.Env):
         self.cfgenv = cfg.get('environment')
         #self.cfgtask = next(iter(cfg.get('tasks').values())) Für Multi-Agent (TODO)
         self.properties = self._load_properties(cfg.get('properties'))
-        action_properties = self._choose_properties(self.cfgenv.get('actions'), self.properties)
-        observation_properties = self._choose_properties(self.cfgenv.get('observations'), self.properties)
-        initial_states = self._get_initial_states(self.cfgenv.get('initial_state'), self.properties)
-        init_sequence = self._get_initial_states(self.cfgenv.get('init_sequence'), self.properties)
+        self.initial_states = self._get_initial_states(self.cfgenv.get('initial_state'), self.properties)
+        self.init_sequence = self._get_initial_states(self.cfgenv.get('init_sequence'), self.properties)
         active_pids = self.cfgenv.get('pids')
         self.pid_controls = self._load_pids(cfg.get('pid'), active_pids, self.properties)
         print (self.pid_controls)
-        simulation_dt = self.cfgenv.get('simulation_stepwidth')
-        controller_dt = self.cfgenv.get('controller_stepwidth')
-        observation_dt = self.cfgenv.get('observation_stepwidth')
+        self._init_timers()
         self.jsbsim_dir = self.cfgenv.get('path_jsbsim') or ''
         self.aircraft = aircrafts[self.cfgenv.get('aircraft')]
         #self.task = task_type(shaping, agent_interaction_freq, self.aircraft)
-        self.task_type = task_dict.get(self.cfgenv.get('task'))
-        self.task = self.task_type( action_properties, observation_properties, initial_states, init_sequence,
-                                self.pid_controls, simulation_dt, controller_dt, observation_dt,
-                                debug = False)
-        self.task.init_reward(self.cfgenv.get('task_init'))
-        init_conditions = self.task.get_initial_conditions()
-        self.sim = self._init_new_sim(simulation_dt , self.aircraft, init_conditions)
+        self.tasks = [self._init_task(cfg) for cfg in self.cfg.get('tasks').values()]
+        self.action_space = [task.action_space for task in self.tasks]
+        #init_conditions = self.task.get_initial_conditions()
+        self.sim = self._init_new_sim(self.simulation_dt , self.aircraft, self.initial_states) # init_conditions)
         #self.sim_steps_per_agent_step: int = self.simulation_freq  // self.observation_freq
         # set Space objects
-        self.observation_space: gym.spaces.Box = self.task.get_state_space()
-        self.action_space: gym.spaces.Box = self.task.get_action_space()
         # set visualisation objects
         self.visualisers = self._load_visualisers(cfg)
         self.step_delay = None
+    
+    def _init_task(self, cfgtask):
+        action_properties = tuple(self._choose_properties(cfgtask.get('actions'), self.properties))
+        state_properties = tuple(self._choose_properties(cfgtask.get('states'), self.properties))
+        actor = cfgtask.get('actor')
+        critic = cfgtask.get('critic')
+        task_type = task_dict.get(cfgtask.get('name'))
+        task = task_type( action_properties, state_properties, debug = False)
+        task.init_reward(self.cfgenv.get('task_init'))
+        observation_space:gym.spaces.Box = task.get_state_space()
+        action_space: gym.spaces.Box = task.get_action_space()
+        ret_task = self.Task(task, state_properties,action_properties, \
+            observation_space, action_space , actor , critic)
+        return ret_task
 
-    def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, Dict]:
-        if not (action.shape == self.action_space.shape):
-            raise ValueError('mismatch between action and action space size')
-
-        state, reward, done, info = self.task.task_step(self.sim, action, self)#, self.sim_steps_per_agent_step)
+    def step(self, action_n: np.ndarray) -> Tuple[np.ndarray, float, bool, Dict]:
+        for task, action in zip(self.tasks, action_n):
+            if not (action.shape == task.action_space.shape):
+                raise ValueError('mismatch between action and action space size')
+            task.task.take_action(self.sim, action)
+        while self.observation_timer > 0:
+            self.sim.run()
+            self.controller_timer -= self.simulation_dt
+            self.observation_timer -= self.simulation_dt
+            if self.controller_timer <= 0:
+                self._run_pid_controls(self.pid_controls, self.sim)
+                self.controller_timer += self.controller_dt
+        self.observation_timer += self.observation_dt
+        for task in self.tasks:
+            task.task.update_custom_properties(self.sim)
+        state, reward, done, info = zip(*[task.task.get_observation(self.sim, action, self) for task in self.tasks])
+        #state, reward, done, info = self.task.task_step(self.sim, action, self)#, self.sim_steps_per_agent_step)
         return np.array(state), reward, done, info
 
     def reset(self):
-        init_conditions = self.task.get_initial_conditions()
-        self.task.reset()
-        self.sim.reinitialise(init_conditions)
+        #init_conditions = self.task.get_initial_conditions()
+        for task in self.tasks: task.task.reset()
+        self.sim.reinitialise(self.initial_states)
         for v in self.visualisers:
             v.reset()
-        state = self.task.observe_first_state(self.sim)
+        self.controller_timer = self.controller_dt
+        self.observation_timer = self.observation_dt
+        for (prop, val) in self.init_sequence.items():
+            self.sim[prop] = val
+        #sim.start_engines()
+        #sim.raise_landing_gear()
+        #sim.set_throttle_mixture_controls(0.8, 0.8)
+        state = [task.task.observe_first_state(self.sim) for task in self.tasks]
         return np.array(state)
+
+    def _init_timers(self):
+        self.simulation_dt = self.cfgenv.get('simulation_stepwidth')
+        self.controller_dt = self.cfgenv.get('controller_stepwidth')
+        self.observation_dt = self.cfgenv.get('observation_stepwidth')
+        if self.simulation_dt is None: raise ValueError('No simulation Frequency given.')
+        if self.observation_dt is None: raise ValueError('No observation Frequency given.')
+        if len(self.pid_controls) > 0: 
+            if self.controller_dt is None:
+                raise ValueError('Automatic controllers present, but no'
+                                ' controller Frequency given.')
+        else: self.controller_dt = self.observation_dt
+        if not (self.simulation_dt <= self.controller_dt):
+            raise ValueError('Condition not met: step width simulation <= step width controller')
+        if not (self.simulation_dt <= self.observation_dt):
+            raise ValueError('Condition not met: step width simulation <= step width observation')
+        self.controller_timer = self.controller_dt
+        self.observation_timer = self.observation_dt
+   
+        
 
     def _init_new_sim(self, dt, aircraft, initial_conditions):
         vis = self.cfg.get('visualiser')
@@ -131,6 +179,11 @@ class JsbSimEnv(gym.Env):
                 pids.update({name:(p, input, output, target)})
         return pids
 
+    def _run_pid_controls(self, pid_controls, sim):
+        for (pid, input, output, target) in pid_controls.values():
+            sim[output] = pid(sim[input], sim[target])
+
+
     def _load_visualisers(self, cfg):
         cfgvis =cfg.get('visualiser') or {}
         if cfgvis.get('enable') == False:
@@ -171,27 +224,3 @@ class JsbSimEnv(gym.Env):
         """
         gym.logger.warn("Could not seed environment %s", self)
         return
-
-
-class NoFGJsbSimEnv(JsbSimEnv):
-    """
-    An RL environment for JSBSim with rendering to FlightGear disabled.
-
-    This class exists to be used for training agents where visualisation is not
-    required. Otherwise, restrictions in JSBSim output initialisation cause it
-    to open a new socket for every single episode, eventually leading to
-    failure of the network.
-    """
-    metadata = {'render.modes': ['human']}
-
-    def _init_new_sim(self, dt: float, aircraft: Aircraft, initial_conditions: Dict):
-        return Simulation(sim_frequency_hz=dt, jsbsim_dir=self.jsbsim_dir,
-                          aircraft=aircraft,
-                          init_conditions=initial_conditions,
-                          allow_flightgear_output=False)
-
-    def render(self, mode='human', flightgear_blocking=True):
-        if mode == 'flightgear':
-            raise ValueError('flightgear rendering is disabled for this class')
-        else:
-            super().render(mode, flightgear_blocking)

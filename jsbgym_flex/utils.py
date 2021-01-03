@@ -35,7 +35,7 @@ def get_env_id(task_type, aircraft, shaping, enable_flightgear) -> str:
         fg_setting = 'NoFG'
     return f'JSBSim-{task_type.__name__}-{aircraft.name}-{shaping}-{fg_setting}-v0'
 
-
+'''
 def get_env_id_kwargs_map() -> Dict[str, Tuple]:
     """ Returns all environment IDs mapped to tuple of (task, aircraft, shaping, flightgear) """
     # lazy import to avoid circular dependencies
@@ -50,7 +50,7 @@ def get_env_id_kwargs_map() -> Dict[str, Tuple]:
                     assert id not in map
                     map[id] = (task_type, plane, shaping, enable_flightgear)
     return map
-
+'''
 
 def product(iterable: Iterable):
     """
