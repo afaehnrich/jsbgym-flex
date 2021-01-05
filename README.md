@@ -243,7 +243,7 @@ RUN python3 -m pip install -r ./requirements_jsbgym-flex.txt
 RUN python3 -m pip install -r ./requirements_deep-glide.txt
 ```
 
-Anschließend wird das Docker-Image unter dem Namen "deep-glide/requirements" erstellt:
+Anschließend wird das Docker-Image unter dem Namen `deep-glide/requirements` erstellt:
 ```
 #!/bin/sh
 docker build -f ./Dockerfile_requirements -t deep-glide/requirements:latest ../
@@ -288,7 +288,7 @@ docker build -f ./Dockerfile -t deep-glide:latest ../
 
 ### 4.3 Starten des Containers
 
-Wenn die CUDA-Cores der Grafikkarte genutzt werden sollen, muss der Container mit dem Parameter "runtime=nvidia" gestartet werden:
+Wenn die CUDA-Cores der Grafikkarte genutzt werden sollen, muss der Container mit dem Parameter `runtime=nvidia` gestartet werden:
 ```
 #!/bin/sh
 docker run --runtime=nvidia deep-glide
