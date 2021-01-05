@@ -205,5 +205,91 @@ min|Real|Untere Grenze des Wertebereichs
 max|Real|Obere Grenze des Wertebereichs
 
 ## 4	Docker
-### 4.1	Jsbsim im Docker
+Reinforcement Learning mit JSBSim ist auch problemlos in einer Dockerumgebung möglich. Es ist empfehlenswert, zunächst ein eigenes Base-Image zu erstellen, welches die benötigten Komponenten enthält, die sich nicht stetig ändern. das eigentliche Dockerimage baut auf dem Base-Image - es wird lediglich der jeweils aktuelle Python-Code hinzugefügt. So geht die Erstellung eines aktuellen Images schnell von statten
 
+### 4.1	Das Base-Image
+Das Base-Image sollte folgende Komponenten enthalten:
+* Python
+* Pip
+* Nvidia Cuda, falls auf einer NVIDIA-GPU trainiert werden soll
+
+Im Beispiel werden drei eigene Python-Packages benutzt:
+* `jsbgym-flex` enthält die openAI-Adaption für JSBSim
+* `RL-wrapper-gym` enthält den Reinforcement-Learning Algorithmus
+* `deep-glide` enthält das Hauptprogramm
+
+In der Datei `Dockerfile_requirements` wird das Base-Image konfiguriert:
+```
+# use a base image with Nvidia Cuda support
+FROM nvidia/cuda:11.1-base-ubuntu20.04
+
+# Keeps Python from generating .pyc files in the container
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Turns off buffering for easier container logging
+ENV PYTHONUNBUFFERED=1
+
+# Install python and pip
+RUN apt-get update && apt-get install -y python3 python3-dev python3-pip
+
+# Install required python packages
+WORKDIR /app
+ADD ./RL-wrapper-gym/requirements.txt ./requirements_RL-wrapper-gym.txt
+ADD ./jsbgym-flex/requirements.txt ./requirements_jsbgym-flex.txt
+ADD ./deep-glide/requirements.txt ./requirements_deep-glide.txt
+
+RUN python3 -m pip install -r ./requirements_RL-wrapper-gym.txt
+RUN python3 -m pip install -r ./requirements_jsbgym-flex.txt
+RUN python3 -m pip install -r ./requirements_deep-glide.txt
+```
+
+Anschließend wird das Docker-Image unter dem Namen "deep-glide/requirements" erstellt:
+```
+#!/bin/sh
+docker build -f ./Dockerfile_requirements -t deep-glide/requirements:latest ../
+```
+
+
+### 4.2 Das RL-Image
+
+Basierend auf dem Base-Image wird ein Image mit dem jeweils aktuellen Python-Code erstellt werden.
+Die Konfiguration befindet sich in der Datei `Dockerfile`:
+
+```
+FROM deep-glide/requirements:latest
+
+WORKDIR /app
+
+# add python source code
+ADD ./RL-wrapper-gym /app/RL-wrapper-gym
+ADD ./jsbgym-flex /app/jsbgym-flex
+ADD ./deep-glide /app/deep-glide
+
+# install packages in edit-mode
+RUN python3 -m pip install -e ./RL-wrapper-gym
+RUN python3 -m pip install -e ./jsbgym-flex
+
+# Switching to a non-root user
+RUN useradd appuser && chown -R appuser /app
+USER appuser
+
+# During debugging, this entry point will be overridden.
+WORKDIR /app/deep-glide
+
+CMD ["python3", "learn_to_fly_test.py"]
+```
+
+Die Erstellung des Images erfolgt analog zum Base-Image:
+
+```
+#!/bin/sh
+docker build -f ./Dockerfile -t deep-glide:latest ../
+```
+
+### 4.3 Starten des Containers
+
+Wenn die CUDA-Cores der Grafikkarte genutzt werden sollen, muss der Container mit dem Parameter "runtime=nvidia" gestartet werden:
+```
+#!/bin/sh
+docker run --runtime=nvidia deep-glide
+```
