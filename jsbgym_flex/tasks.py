@@ -5,6 +5,7 @@ import types
 import math
 import enum
 import warnings
+import geopy
 from collections import namedtuple
 import jsbgym_flex.properties as prp
 from jsbgym_flex import assessors, rewards, utils
@@ -15,6 +16,7 @@ from jsbgym_flex.rewards import RewardStub
 from abc import ABC, abstractmethod
 from typing import Optional, Sequence, Dict, Tuple, NamedTuple, Type
 from jsbgym_flex.pid import PID_angle
+import random
 
 
 class Task(ABC):
@@ -56,11 +58,20 @@ class FlightTask(Task, ABC):
     last_assessment_reward = Property('reward/last_assess_reward', 'assessment reward from step;'
                                                                    'excludes shaping')
                                                                    
-    def __init__(self, action_properties, state_properties, #initial_states, init_sequence,  pid_controls, 
+    #def __init__(self, action_properties, state_properties, #initial_states, init_sequence,  pid_controls, 
+    #            #simulation_dt, controller_dt, observation_dt, 
+    #            debug: bool = False) -> None:
+    def __init__(self, cfg, sim, env, #initial_states, init_sequence,  pid_controls, 
                 #simulation_dt, controller_dt, observation_dt, 
                 debug: bool = False) -> None:
-        self.action_properties = tuple(action_properties)
-        self.state_properties = tuple(state_properties)
+        random.seed()
+        self.cfg = cfg
+        self.sim = sim
+        self.env = env
+        self.action_properties = tuple(env._choose_properties(cfg.get('actions'), env.properties))
+        self.state_properties = tuple(env._choose_properties(cfg.get('states'), env.properties))                
+        #self.action_properties = tuple(action_properties)
+        #self.state_properties = tuple(state_properties)
         self.last_state = None
         self._make_state_class()
         #self.initial_states = initial_states
@@ -70,7 +81,9 @@ class FlightTask(Task, ABC):
         self.reset()
 
     def reset(self):
-       pass
+        self.terminal = False
+        self.init_reward(self.cfg['init'], self.sim, self.env)
+        pass
 
 
 
@@ -88,7 +101,8 @@ class FlightTask(Task, ABC):
         
     def get_observation (self, sim: Simulation, action: Sequence[float], env) \
             -> Tuple[NamedTuple, float, bool, Dict]:
-        state = self.State(*(sim[prop] for prop in self.state_properties))
+        #state = self.State(*(sim[prop] for prop in self.state_properties))
+        state = [sim[prop] for prop in self.state_properties]
         done = self._is_terminal(sim, env)
         reward = self._calculate_reward(state, self.last_state, done, sim, env)
         if done:
@@ -117,33 +131,20 @@ class FlightTask(Task, ABC):
         #sim[self.last_assessment_reward] = reward.assessment_reward()
         pass
 
-    def update_custom_properties(self, sim: Simulation) -> None:
+    def update_custom_properties(self, sim: Simulation, env) -> None:
         """ Calculates any custom properties which change every timestep. """
         pass
 
-    def observe_first_state(self, sim: Simulation) -> np.ndarray:
-        #self._new_episode_init(sim)
-        self.update_custom_properties(sim)
-        state = self.State(*(sim[prop] for prop in self.state_properties))
+    def observe_first_state(self, sim: Simulation, env) -> np.ndarray:
+        self._new_episode_init(sim, env)
+        self.update_custom_properties(sim, env)
+        state = [sim[prop] for prop in self.state_properties]
         self.last_state = state
         return state
 
+    def _new_episode_init(self, sim: Simulation, env) -> None:
+        pass
     '''
-    def _new_episode_init(self, sim: Simulation) -> None:
-        """
-        This method is called at the start of every episode. It is used to set
-        the value of any controls or environment properties not already defined
-        in the task's initial conditions.
-
-        By default it simply starts the aircraft engines.
-        """
-        for (prop, val) in self.init_sequence.items():
-            sim[prop] = val
-        #sim.start_engines()
-        #sim.raise_landing_gear()
-        #sim.set_throttle_mixture_controls(0.8, 0.8)
-        self._store_reward(RewardStub(1.0, 1.0), sim)
-
     #@abstractmethod
     def get_initial_conditions(self) -> Dict[Property, float]:
         return self.initial_states
@@ -183,16 +184,26 @@ class FlightTask(Task, ABC):
         ...
 
     @abstractmethod
-    def init_reward(self, init):
+    def init_reward(self, init, sim, env):
         ...
 
 
 class AFHeadingControlTask(FlightTask):
 
-    def init_reward(self, init):
+    def init_reward(self, init, sim, env):
         self.head_target = init['head_target']
+        env.set_property('pos_dx_m', 0)
+        env.set_property('pos_dy_m', 0)
+        self.start = (env.get_property('initial_latitude_geod_deg'), env.get_property('initial_longitude_geoc_deg'))
+
 
     def _calculate_reward(self, state, last_state, done, sim, env):
+        dy = env.get_property('dist_travel_lat_m')
+        dx = env.get_property('dist_travel_lon_m')
+        if env.get_property('lat_geod_deg') < self.start[0]: dy = -dy
+        if env.get_property('lng_geoc_deg') < self.start[1]: dx = -dx
+        env.set_property('pos_dx_m', dx)
+        env.set_property('pos_dy_m', dy)
         head = env.get_property('heading_rad')
         d1 = abs(head - self.head_target)
         d2 = abs (head- (2*math.pi + self.head_target))
@@ -207,15 +218,22 @@ class AFHeadingControlTask(FlightTask):
     def _reward_terminal_override(self, reward: rewards.Reward, sim: Simulation, env) -> bool:
         return reward
 
-
-
 class FlyAlongLineTask(FlightTask):
 
-    def init_reward(self, init):
+    def init_reward(self, init, sim, env):
+        env.set_property('pos_dx_m', 0)
+        env.set_property('pos_dy_m', 0)
+        self.start = (env.get_property('initial_latitude_geod_deg'), env.get_property('initial_longitude_geoc_deg'))
         pass
 
     
     def _calculate_reward(self, state, last_state, done, sim, env):
+        dy = env.get_property('dist_travel_lat_m')
+        dx = env.get_property('dist_travel_lon_m')
+        if env.get_property('lat_geod_deg') < self.start[0]: dy = -dy
+        if env.get_property('lng_geoc_deg') < self.start[1]: dx = -dx
+        env.set_property('pos_dx_m', dx)
+        env.set_property('pos_dy_m', dy)
         delta_lat = env.get_property('lat_geod_deg') - env.get_property('initial_latitude_geod_deg')
         delta_lon = env.get_property('lng_geoc_deg') - env.get_property('initial_longitude_geoc_deg')
         #reward = -abs(delta_lon)
@@ -230,26 +248,146 @@ class FlyAlongLineTask(FlightTask):
     def _reward_terminal_override(self, reward: rewards.Reward, sim: Simulation, env) -> bool:
         return reward
 
-class FindTargetTask(FlightTask):
 
-    def init_reward(self, init):
-        pass
+class FindTargetTask_Heading(FlightTask):
 
-    
+    def _new_episode_init(self, sim, env):
+        rng_min = self.init.get('target_min_range')
+        rng_max = self.init.get('target_max_range')
+        if rng_min and rng_max:
+            r = random.uniform(rng_min, rng_max)
+            deg = random.uniform(0, 2 * math.pi)
+            self.target_dx = math.sin(deg)*r
+            self.target_dy = math.cos(deg)*r
+            self.target_head = random.uniform(0, 2 * math.pi)
+        else:
+            self.target_dx = self.init['target_dx_m']
+            self.target_dy = self.init['target_dy_m']           
+            self.target_head = self.init['target_heading']
+        env.set_property('target_dx_m', self.target_dx)
+        env.set_property('target_dy_m', self.target_dy)
+        env.set_property('target_heading', self.target_head)
+
+
+    def update_custom_properties(self, sim: Simulation, env) -> None:
+        dy = env.get_property('dist_travel_lat_m')
+        dx = env.get_property('dist_travel_lon_m')
+        if env.get_property('lat_geod_deg') < self.start[0]: dy = -dy
+        if env.get_property('lng_geoc_deg') < self.start[1]: dx = -dx
+        env.set_property('pos_dx_m', dx)
+        env.set_property('pos_dy_m', dy)
+        self.alpha = xy2heading(dx,dy, self.target_dx,self.target_dy)
+        env.set_property('alpha', self.alpha)
+        self.dist = math.sqrt( (self.target_dx - dx)**2 + (self.target_dy - dy)**2 )
+        env.set_property('target_distance', self.dist)
+
+    def init_reward(self, init, sim, env):
+        self.init = init
+        self.max_dist_target = init['max_dist_target']
+        self.max_steps = init['max_steps']
+        self.step = 0
+        self.start = (env.get_property('initial_latitude_geod_deg'), env.get_property('initial_longitude_geoc_deg'))
+
+
     def _calculate_reward(self, state, last_state, done, sim, env):
-        delta_lat = env.get_property('lat_geod_deg') - env.get_property('initial_latitude_geod_deg')
-        delta_lon = env.get_property('lng_geoc_deg') - env.get_property('initial_longitude_geoc_deg')
-        #reward = -abs(delta_lon)
-        #if reward > -0.01: reward = -reward
-        reward = abs(delta_lat)
+        self.step += 1
+        if self.dist < self.max_dist_target:
+            heading_dif = env.get_property('heading_rad') - env.get_property('target_heading')
+            heading_dif = limit_angle(heading_dif, 2* math.pi)
+            reward = 10-heading_dif*1
+            self.terminal = True
+            print('FindTarget: Succes')
+        elif self.terminal:
+            reward = self.alpha - env.get_property('heading_rad')
+            reward = -abs(limit_angle(reward, 2* math.pi))            
+            print('Distant am Schluss: {:.0f}m'.format(self.dist))
+        else:
+            reward = self.alpha - env.get_property('heading_rad')
+            reward = -abs(limit_angle(reward, 2* math.pi))
         return reward
 
     def _is_terminal(self, sim: Simulation, env) -> bool:
-        if env.get_property('sim_time_s') > 200: return True
-        return False
+        if self.step > self.max_steps: self.terminal = True
+        return self.terminal
 
     def _reward_terminal_override(self, reward: rewards.Reward, sim: Simulation, env) -> bool:
         return reward
+
+class FindTargetTask(FindTargetTask_Heading):
+
+    def _calculate_reward(self, state, last_state, done, sim, env): 
+        self.step += 1
+        if self.dist < self.max_dist_target:
+            heading_dif = env.get_property('heading_rad') - env.get_property('target_heading')
+            heading_dif = limit_angle(heading_dif, 2* math.pi)
+            reward = 10-heading_dif*1
+            self.terminal = True
+            print('FindTarget: Succes')
+        elif self.terminal:
+            reward = - self.dist/10000
+            print('Distant am Schluss: {:.0f}m'.format(self.dist))
+        else:
+            reward = -self.dist/10000
+        return reward
+
+
+class FindTargetMapTask(FlightTask):
+    
+    def init_reward(self, init, sim, env):
+        print('INIT:',init)
+        env.set_property('target_lat_geod_deg', init['target_lat'])
+        env.set_property('target_lng_geoc_deg', init['target_lng'])
+        env.set_property('target_heading', init['target_head'])
+        self.max_dist_target = init['max_dist_target']
+    
+    def _calculate_reward(self, state, last_state, done, sim, env):
+        delta_lat = env.get_property('lat_geod_deg') - env.get_property('target_lat_geod_deg')
+        delta_lng = env.get_property('lng_geoc_deg') - env.get_property('target_lng_geoc_deg')
+        #dist = math.sqrt(delta_lat**2+delta_lng**2)
+        dist = delta_lat**2+delta_lng**2
+        if math.sqrt(dist) < self.max_dist_target:
+            heading_dif = env.get_property('heading_rad') - env.get_property('target_heading')
+            heading_dif = limit_angle(heading_dif, 2* math.pi)
+            reward = 100-heading_dif*10
+            self.terminal = True
+            print('FindTargetMap: Succes')
+        else:
+            reward = - dist
+        return reward
+
+    def _is_terminal(self, sim: Simulation, env) -> bool:
+        #if env.get_property('sim_time_s') > 200: return True
+        return self.terminal
+
+    def _reward_terminal_override(self, reward: rewards.Reward, sim: Simulation, env) -> bool:
+        return reward
+
+def limit_angle( angle, max_angle):
+        #limitiert den Winkel auf einen +/-halben Kreis, z.B. auf max. -180°..180°
+        half = max_angle / 2
+        return (angle + half ) % max_angle - half
+
+
+def xy2heading(x1,y1,x2,y2):
+    if ((x1-x2) == 0) and ((y1-y2) > 0):
+        return math.pi
+    elif ((x1-x2) == 0) and ((y1-y2) < 0):
+        return 0
+    elif ((x1-x2) > 0) and ((y1-y2) == 0):
+        return math.pi*1.5
+    elif ((x1-x2) < 0) and ((y1-y2) == 0):
+        return math.pi*0.5
+    elif ((x1-x2) == 0) and ((y1-y2) == 0):
+        return 0 #eigentlich keine Winkelberechnung möglich, wenn beide Punkte identisch
+    kw = math.atan((y1-y2)/(x1-x2))
+    if x2>x1 and y2>y1:
+        return math.pi/2-kw
+    elif x2>x1 and y2<y1:
+        return math.pi/2-kw
+    elif x2<x1 and y2<y1:
+        return 1.5*math.pi-kw
+    elif x2<x1 and y2>y1:
+        return 1.5*math.pi-kw
 
 class Shaping(enum.Enum):
     STANDARD = 'STANDARD'
@@ -258,5 +396,7 @@ class Shaping(enum.Enum):
 
 task_dict = {
     'HeadingControl': AFHeadingControlTask,
-    'FlyAlongLine': FlyAlongLineTask
+    'FlyAlongLine': FlyAlongLineTask,
+    'FindTarget': FindTargetTask,
+    'FindTargetHead': FindTargetTask_Heading
 }

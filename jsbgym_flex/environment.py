@@ -33,13 +33,11 @@ class JsbSimEnv(gym.Env):
         self.jsbsim_dir = self.cfgenv.get('path_jsbsim') or ''
         self.aircraft = aircrafts[self.cfgenv.get('aircraft')]
         #self.task = task_type(shaping, agent_interaction_freq, self.aircraft)
+        self.sim = self._init_new_sim(self.simulation_dt , self.aircraft, self.initial_states) # init_conditions)
+        for cfg in self.cfg.get('tasks').values():
+            print("CFG:", cfg)
         self.tasks = [self._init_task(cfg) for cfg in self.cfg.get('tasks').values()]
         self.action_space = [task.action_space for task in self.tasks]
-        #init_conditions = self.task.get_initial_conditions()
-        self.sim = self._init_new_sim(self.simulation_dt , self.aircraft, self.initial_states) # init_conditions)
-        #self.sim_steps_per_agent_step: int = self.simulation_freq  // self.observation_freq
-        # set Space objects
-        # set visualisation objects
         self.visualisers = self._load_visualisers(cfg)
         self.step_delay = None
     
@@ -49,8 +47,9 @@ class JsbSimEnv(gym.Env):
         actor = cfgtask.get('actor')
         critic = cfgtask.get('critic')
         task_type = task_dict.get(cfgtask.get('name'))
-        task = task_type( action_properties, state_properties, debug = False)
-        task.init_reward(self.cfgenv.get('task_init'))
+        #task = task_type( action_properties, state_properties, cfgtask, self.sim, self, debug = False)
+        task = task_type( cfgtask, self.sim, self, debug = False)
+        #task.init_reward(cfgtask.get('init'), self.sim, self)
         observation_space:gym.spaces.Box = task.get_state_space()
         action_space: gym.spaces.Box = task.get_action_space()
         ret_task = self.Task(task, state_properties,action_properties, \
@@ -58,6 +57,7 @@ class JsbSimEnv(gym.Env):
         return ret_task
 
     def step(self, action_n: np.ndarray) -> Tuple[np.ndarray, float, bool, Dict]:
+        #if action_n[0]>7 : print(action_n)
         for task, action in zip(self.tasks, action_n):
             if not (action.shape == task.action_space.shape):
                 raise ValueError('mismatch between action and action space size')
@@ -71,14 +71,17 @@ class JsbSimEnv(gym.Env):
                 self.controller_timer += self.controller_dt
         self.observation_timer += self.observation_dt
         for task in self.tasks:
-            task.task.update_custom_properties(self.sim)
+            task.task.update_custom_properties(self.sim, self)
         state, reward, done, info = zip(*[task.task.get_observation(self.sim, action, self) for task in self.tasks])
         #state, reward, done, info = self.task.task_step(self.sim, action, self)#, self.sim_steps_per_agent_step)
+        self.set_property('reward', reward[0])
         return np.array(state), reward, done, info
 
     def reset(self):
         #init_conditions = self.task.get_initial_conditions()
-        for task in self.tasks: task.task.reset()
+        for task in self.tasks: 
+            task.task.reset()
+            #task.task.init_reward
         self.sim.reinitialise(self.initial_states)
         for v in self.visualisers:
             v.reset()
@@ -89,7 +92,7 @@ class JsbSimEnv(gym.Env):
         #sim.start_engines()
         #sim.raise_landing_gear()
         #sim.set_throttle_mixture_controls(0.8, 0.8)
-        state = [task.task.observe_first_state(self.sim) for task in self.tasks]
+        state = [task.task.observe_first_state(self.sim, self) for task in self.tasks]
         return np.array(state)
 
     def _init_timers(self):
